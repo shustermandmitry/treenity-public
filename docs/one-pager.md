@@ -73,10 +73,10 @@ The AI doesn't write code. It takes the cafe template, adds `delivery`, `address
 |---|---|
 | Core | 197 lines, zero dependencies |
 | Store layer | 502 lines — 3 backends, 3 composable wrappers |
-| Server | ~2,200 lines — mounts, ACL, tRPC, MCP, subscriptions |
+| Server | ~2,200 lines — mounts, ACL, tRPC, MCP, subscriptions (deps: sift, immer, tRPC) |
 | Frontend | ~2,900 lines — tree navigator, inspector, reactive cache |
 | Module system | 546 lines — discovery, dependency sort, hot-loading |
-| Tests | 486+, all passing |
+| Tests | 1334, all passing |
 | Layers | 7, each independently replaceable |
 
 Seven layers, strict downward dependency. Core has zero awareness of storage, transport, or rendering. Any layer can be swapped without touching the others.

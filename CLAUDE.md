@@ -1,7 +1,7 @@
 ## Treenity
 
 Low-code RAD platform. Tree of typed components with context-aware rendering.
-Inspired by Unity3D ECS, Plan9 filesystem, Unix pipes.
+Inspired by Unity3D component model, Plan9 filesystem, Unix pipes.
 
 # RULES
 
@@ -73,5 +73,6 @@ Context   = Map<type+context, handler>
 - TypeScript strict, ES2022, ESM
 - tsx to run
 - node:test for testing
+- **Always run tests via `npm test`**, not `npx tsx --test` directly — scripts pass `--conditions development` needed for `#*` imports to resolve to `src/` instead of `dist/`
 - python3 for Python scripts
 - react, dayjs, fetch (never axios)

@@ -16,6 +16,7 @@ import type { TypeSchema } from '@treenity/core/schema/types';
 import { createElement, useEffect, useRef, useState } from 'react';
 import { AclEditor } from './AclEditor';
 import * as cache from './cache';
+import { ErrorBoundary } from './ErrorBoundary';
 import { set, usePath } from './hooks';
 import { useSchema } from './schema-loader';
 import { trpc } from './trpc';
@@ -715,11 +716,13 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
 
       {/* Rendered view */}
       <div className="editor-body">
-        <RenderContext name={context}>
-          <div className="node-view">
-            <Render value={node} />
-          </div>
-        </RenderContext>
+        <ErrorBoundary>
+          <RenderContext name={context}>
+            <div className="node-view">
+              <Render value={node} />
+            </div>
+          </RenderContext>
+        </ErrorBoundary>
       </div>
 
       {/* Slide-out edit panel */}
@@ -768,15 +771,17 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
               {(mainCompCls || schema) && (
                 <div className="card">
                   <div className="card-header">{node.$type}</div>
-                  <ComponentBody
-                    ctype={node.$type}
-                    cdata={plainData}
-                    setCD={(fn) => dSetPlainData(fn)}
-                    path={node.$path}
-                    componentName=""
-                    toast={toast}
-                    onActionComplete={handleReset}
-                  />
+                  <ErrorBoundary>
+                    <ComponentBody
+                      ctype={node.$type}
+                      cdata={plainData}
+                      setCD={(fn) => dSetPlainData(fn)}
+                      path={node.$path}
+                      componentName=""
+                      toast={toast}
+                      onActionComplete={handleReset}
+                    />
+                  </ErrorBoundary>
                 </div>
               )}
 
@@ -795,15 +800,17 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
                     </span>
                   </div>
                   {!collapsed.has(name) && (
-                    <ComponentBody
-                      ctype={(comp as ComponentData).$type}
-                      cdata={compData[name] ?? {}}
-                      setCD={(fn) => dSetCompData((prev) => ({ ...prev, [name]: fn(prev[name] ?? {}) }))}
-                      path={node.$path}
-                      componentName={name}
-                      toast={toast}
-                      onActionComplete={handleReset}
-                    />
+                    <ErrorBoundary>
+                      <ComponentBody
+                        ctype={(comp as ComponentData).$type}
+                        cdata={compData[name] ?? {}}
+                        setCD={(fn) => dSetCompData((prev) => ({ ...prev, [name]: fn(prev[name] ?? {}) }))}
+                        path={node.$path}
+                        componentName={name}
+                        toast={toast}
+                        onActionComplete={handleReset}
+                      />
+                    </ErrorBoundary>
                   )}
                 </div>
               ))}
