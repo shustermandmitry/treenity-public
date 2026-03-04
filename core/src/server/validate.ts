@@ -10,7 +10,7 @@ export function withValidation(store: Tree): Tree {
     async set(node) {
       const errors = validateNode(node);
       if (errors.length) {
-        const msg = errors.map(e => `${e.path}#${e.field}.${e.prop}: ${e.message}`).join('; ');
+        const msg = errors.map(e => `${e.path}: ${e.message}`).join('; ');
         throw new Error(`Validation: ${msg}`);
       }
       return store.set(node);
