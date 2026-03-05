@@ -16,7 +16,7 @@ type LayoutItem = { i: string; x: number; y: number; w: number; h: number };
 
 // ── App icon — resolves ref target and renders via react:icon ──
 
-function AppIcon({ refNode, editing }: { refNode: NodeData; editing?: boolean }) {
+function AppIcon({ refNode, editing, onRemove }: { refNode: NodeData; editing?: boolean; onRemove?: () => void }) {
   const targetPath = isRef(refNode) ? refNode.$ref : null;
   const target = usePath(targetPath) as NodeData | undefined;
   const navigate = useNavigate();
@@ -36,10 +36,18 @@ function AppIcon({ refNode, editing }: { refNode: NodeData; editing?: boolean })
       className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1"
       onClick={() => !editing && navigate(target.$path)}
     >
-      <div className="h-14 w-14 shrink-0">
+      <div className="relative h-14 w-14 shrink-0">
         <RenderContext name="react:icon">
           <Render value={target} />
         </RenderContext>
+        {editing && onRemove && (
+          <button
+            className="absolute -left-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-800/90 shadow-lg ring-1 ring-white/20"
+            onClick={e => { e.stopPropagation(); onRemove(); }}
+          >
+            <X className="h-3 w-3 text-white" />
+          </button>
+        )}
       </div>
       <span className="max-w-16 truncate text-center text-[11px] font-medium text-white/90 drop-shadow-sm">
         {label}
@@ -50,7 +58,7 @@ function AppIcon({ refNode, editing }: { refNode: NodeData; editing?: boolean })
 
 // ── Widget card — renders target via react:widget or react fallback ──
 
-function WidgetCard({ refNode, editing }: { refNode: NodeData; editing?: boolean }) {
+function WidgetCard({ refNode, editing, onRemove }: { refNode: NodeData; editing?: boolean; onRemove?: () => void }) {
   const targetPath = isRef(refNode) ? refNode.$ref : null;
   const target = usePath(targetPath) as NodeData | undefined;
   const navigate = useNavigate();
@@ -65,9 +73,17 @@ function WidgetCard({ refNode, editing }: { refNode: NodeData; editing?: boolean
 
   return (
     <div
-      className="launcher-glass h-full w-full cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-white/10 p-3"
+      className="launcher-glass relative h-full w-full cursor-pointer overflow-visible rounded-2xl border border-white/10 bg-white/10 p-3"
       onClick={() => !editing && navigate(target.$path)}
     >
+      {editing && onRemove && (
+        <button
+          className="absolute -left-2 -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800/90 shadow-lg ring-1 ring-white/20"
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+        >
+          <X className="h-3.5 w-3.5 text-white" />
+        </button>
+      )}
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/50">
         {target.$path.split('/').at(-1)}
       </div>
@@ -88,7 +104,7 @@ function AddAppInput({ launcherPath, onClose }: { launcherPath: string; onClose:
   const handleAdd = async () => {
     const p = path.trim();
     if (!p) return;
-    await execute(launcherPath, 'addApp', { path: p }, 'launcher');
+    await execute(launcherPath, 'addApp', { path: p });
     setPath('');
     onClose();
   };
@@ -168,11 +184,11 @@ function LauncherView({ value }: { value: NodeData }) {
 
   const persistLayout = useCallback((newLayout: readonly LayoutItem[]) => {
     const clean = newLayout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
-    execute(value.$path, 'updateLayout', { layout: JSON.stringify(clean) }, 'launcher');
+    execute(value.$path, 'updateLayout', { layout: JSON.stringify(clean) });
   }, [value.$path]);
 
   const handleRemove = (id: string) => {
-    execute(value.$path, 'removeApp', { id }, 'launcher');
+    execute(value.$path, 'removeApp', { id });
   };
 
   return (
@@ -214,21 +230,11 @@ function LauncherView({ value }: { value: NodeData }) {
             const isWidget = item.w > 1 || item.h > 1;
 
             return (
-              <div key={item.i} className="launcher-item relative">
-                <div className={editing ? 'launcher-wiggle h-full' : 'h-full'}>
-                  {isWidget
-                    ? <WidgetCard refNode={child} editing={editing} />
-                    : <AppIcon refNode={child} editing={editing} />
-                  }
-                </div>
-                {editing && (
-                  <button
-                    className="absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow-md"
-                    onClick={e => { e.stopPropagation(); handleRemove(item.i); }}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
+              <div key={item.i} className={cn('launcher-item h-full', editing && 'launcher-wiggle')}>
+                {isWidget
+                  ? <WidgetCard refNode={child} editing={editing} onRemove={() => handleRemove(item.i)} />
+                  : <AppIcon refNode={child} editing={editing} onRemove={() => handleRemove(item.i)} />
+                }
               </div>
             );
           })}
