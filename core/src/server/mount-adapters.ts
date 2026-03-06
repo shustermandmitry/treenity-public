@@ -76,8 +76,9 @@ register('t.mount.overlay', 'mount', async (config: NodeData, parentStore, ctx, 
     if (!isComponent(comp)) throw new Error(`t.mount.overlay: component "${name}" not found`);
     const adapter = resolve(comp.$type, 'mount');
     if (!adapter) throw new Error(`No mount adapter for "${comp.$type}"`);
-    // Overlay sub-adapters receive a component, not full node — they don't need $path
-    stores.push(await adapter(comp as NodeData, stores[0] ?? ({} as Tree), ctx, globalStore));
+    // Propagate parent $path so sub-adapters can repath correctly
+    const subConfig = { ...comp, $path: config.$path } as NodeData;
+    stores.push(await adapter(subConfig, stores[0] ?? ({} as Tree), ctx, globalStore));
   }
   // First = lower (base), last = upper (writes go here)
   let result = stores[0];
