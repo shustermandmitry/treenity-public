@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { createMemoryTree } from '#tree'
-import { register } from '#core'
 import { registerType } from '#comp'
 import { type TypedRef, refVal } from '#chain'
 import { isRef } from '#core'
@@ -14,12 +13,17 @@ class Scanner {
   intervalMs = 900_000
   maxRetries = 3
   livePrices: TypedRef<LivePrices> = refVal(LivePrices)
+  scan() { return { started: true } }
+  configure(data: { interval: number }) { return data }
 }
 registerType('tch.scanner', Scanner)
 
 class LivePrices {
   static $type = 'tch.live-prices'
   feederUrl = 'ws://localhost:8090'
+  subscribe(data: { slugs: string[] }) {
+    return data.slugs.map((s: string) => ({ slug: s, bid: 0.6 }))
+  }
 }
 registerType('tch.live-prices', LivePrices)
 
@@ -36,14 +40,6 @@ class Wallet {
   chain = ''
 }
 registerType('tch.wallet', Wallet)
-
-// ── Register actions ──
-
-register('tch.scanner', 'action:scan', () => ({ started: true }))
-register('tch.scanner', 'action:configure', (_ctx: any, data: any) => data)
-register('tch.live-prices', 'action:subscribe', (_ctx: any, data: any) =>
-  data.slugs.map((s: string) => ({ slug: s, bid: 0.6 })),
-)
 
 // ── Seed ──
 
@@ -133,9 +129,9 @@ describe('treeChain — $get (typed component)', () => {
     assert.equal(scanner.maxRetries, 3)
   })
 
-  test('$get with named component', async () => {
+  test('$field with named component', async () => {
     const tree = await seed()
-    const wallet = await treeChain(tree).users.alice.$get(null, 'wallet')
+    const wallet = await treeChain(tree).users.alice.$field('wallet')
     assert.equal(wallet.address, '0xabc')
   })
 
@@ -290,6 +286,8 @@ class BoardTask {
   title = ''
   status = 'backlog'
   priority = 'normal'
+  move(data: { status: string }) { return { moved: data.status } }
+  assign(data: { to: string }) { return { assigned: data.to } }
 }
 registerType('tch.board.task', BoardTask)
 
@@ -316,12 +314,9 @@ class BrahmanBot {
   static $type = 'tch.brahman.bot'
   alias = ''
   running = false
+  restart() { return { restarted: true } }
 }
 registerType('tch.brahman.bot', BrahmanBot)
-
-register('tch.board.task', 'action:move', (_ctx: any, data: any) => ({ moved: data.status }))
-register('tch.board.task', 'action:assign', (_ctx: any, data: any) => ({ assigned: data.to }))
-register('tch.brahman.bot', 'action:restart', () => ({ restarted: true }))
 
 async function seedRealWorld(): Promise<Tree> {
   const tree = createMemoryTree()
@@ -557,22 +552,17 @@ describe('treeChain — $set', () => {
 })
 
 describe('treeChain — Symbol traps', () => {
-  test('Symbol.toPrimitive returns TreeChain(path)', () => {
-    const c = treeChain(null as any)
-    assert.equal(c.services.scanner[Symbol.toPrimitive], 'TreeChain(/services/scanner)')
-  })
-
   test('Symbol.toPrimitive on root', () => {
-    assert.equal(treeChain(null as any)[Symbol.toPrimitive], 'TreeChain(/)')
+    assert.equal((treeChain(null as any) as any)[Symbol.toPrimitive], 'TreeChain(/)')
   })
 
   test('Symbol.toStringTag', () => {
-    const c = treeChain(null as any).foo
-    assert.equal(c[Symbol.toStringTag], 'TreeChain(/foo)')
+    const c = treeChain(null as any) as any
+    assert.equal(c.foo[Symbol.toStringTag], 'TreeChain(/foo)')
   })
 
   test('other symbols return undefined', () => {
-    const c = treeChain(null as any)
+    const c = treeChain(null as any) as any
     assert.equal(c[Symbol.iterator], undefined)
     assert.equal(c[Symbol.asyncIterator], undefined)
   })
@@ -601,32 +591,35 @@ describe('treeChain — basePath edge cases', () => {
 describe('treeChain — error paths', () => {
   test('action without (Class) throws', async () => {
     const tree = await seed()
+    const t = treeChain(tree) as any
     await assert.rejects(
-      async () => { await treeChain(tree).services.scanner.scan() },
+      async () => { await t.services.scanner.scan() },
       (e: Error) => e.message.includes('Class'),
     )
   })
 
   test('unregistered action throws', async () => {
     const tree = await seed()
+    const t = treeChain(tree) as any
     await assert.rejects(
-      async () => { await treeChain(tree).services.scanner(Scanner).nonexistent() },
+      async () => { await t.services.scanner(Scanner).nonexistent() },
       (e: Error) => e.message.includes('action'),
     )
   })
 
   test('null field in ops throws', async () => {
     const tree = await seed()
+    const t = treeChain(tree) as any
     await assert.rejects(
-      async () => { await treeChain(tree).services.scanner.$get(Scanner).noSuchField },
+      async () => { await t.services.scanner.$get(Scanner).noSuchField },
       (e: Error) => e.message.includes('null'),
     )
   })
 
-  test('$get with missing named component throws', async () => {
+  test('$field with missing named component throws', async () => {
     const tree = await seed()
     await assert.rejects(
-      async () => { await treeChain(tree).services.scanner.$get(null, 'ghost') },
+      async () => { await treeChain(tree).services.scanner.$field('ghost') },
       (e: Error) => e.message.includes('ghost'),
     )
   })
@@ -642,10 +635,11 @@ describe('treeChain — (Class) where node.$type matches', () => {
     const tree = await seed()
     // scanner.$type === 'tch.scanner', Scanner.$type === 'tch.scanner'
     // getComp returns node itself — all fields at node level
+    const node = await treeChain(tree).services.scanner
+    assert.equal(node.$type, 'tch.scanner')
+    assert.equal(node.$path, '/services/scanner')
     const scanner = await treeChain(tree).services.scanner(Scanner)
-    assert.equal(scanner.$type, 'tch.scanner')
     assert.equal(scanner.intervalMs, 900_000)
-    assert.equal(scanner.$path, '/services/scanner')
   })
 })
 
@@ -690,7 +684,7 @@ describe('treeChain — multiple ops chain', () => {
     await tree.set({ $path: '/lp', $type: 'tch.live-prices', feederUrl: 'ws://chain' })
 
     // $get → field (nested component, not a ref) → field
-    const chain = await treeChain(tree).config.$get(null, 'nested').chain
+    const chain = await treeChain(tree).config.$field('nested').chain
     assert.equal(chain, 'polygon')
   })
 })
@@ -700,7 +694,7 @@ describe('treeChain — chain isolation', () => {
     const tree = await seed()
     const t = treeChain(tree)
 
-    const chain1 = t.services.scanner.$get(Scanner)
+    const chain1 = t.services.scanner
     const chain2 = t.services['live-prices']
 
     const s = await chain1

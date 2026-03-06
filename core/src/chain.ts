@@ -16,9 +16,11 @@ type ValuePromise<T> = T extends Primitive
   : Chain<T>
 
 export type Chain<T> = Promise<T> & {
-  [K in keyof T]: T[K] extends (...args: infer A) => infer R
-    ? (...args: A) => ValuePromise<Awaited<NonNullable<R>>>
-    : ValuePromise<Awaited<NonNullable<T[K]>>>
+  [K in keyof T]: T[K] extends TypedRef<infer U>
+    ? Chain<U>
+    : T[K] extends (...args: infer A) => infer R
+      ? (...args: A) => ValuePromise<Awaited<NonNullable<R>>>
+      : ValuePromise<Awaited<NonNullable<T[K]>>>
 }
 
 // TypedRef: runtime $ref + phantom type T for call-chain to follow

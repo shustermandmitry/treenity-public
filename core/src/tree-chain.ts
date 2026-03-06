@@ -19,6 +19,7 @@ type TreeChainAPI = {
   <T>(cls: TypeClass<T>): Chain<T>
   readonly $path: string
   $get<T>(cls: Class<T>, key?: string): Chain<T>
+  $field(key: string): Chain<any>
   $children(query?: Record<string, unknown>): Promise<NodeData[]>
   $set<T>(cls: Class<T>, data?: Partial<Raw<T>>): Promise<void>
   then<R1 = NodeData, R2 = never>(
@@ -95,6 +96,11 @@ function make(tree: Tree, path: string, spec: Spec | null, ops: Op[]): any {
       if (p === '$get') {
         return (cls: Class | null, key?: string) =>
           make(tree, path, { cls, key }, NO_OPS)
+      }
+
+      if (p === '$field') {
+        return (key: string) =>
+          make(tree, path, { cls: null, key }, NO_OPS)
       }
 
       if (p === '$children') {
