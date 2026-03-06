@@ -117,7 +117,7 @@ async function resolveActionHandler(
 
   let deps: ResolvedDeps = await _collectDeps(node, fieldKey!, action, store);
 
-  let handler = resolve(comp, `action:${action}`);
+  let handler = resolve(type, `action:${action}`);
 
   // Fallback: try loading dynamic action from type definition node
   if (!handler) handler = await loadDynamicAction(store, type, action);

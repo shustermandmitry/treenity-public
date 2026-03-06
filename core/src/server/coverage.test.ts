@@ -51,7 +51,7 @@ describe('Mount adapters', () => {
     register('t.mount.query', 'mount', (config: any, parentStore: Tree, _ctx: any, globalStore?: Tree) => {
       const n = config as NodeData;
       const qv = n['query'];
-      const query = isComponent(qv) ? qv as { source: string; match: Record<string, unknown> } : undefined;
+      const query = isComponent(qv) ? qv as unknown as { source: string; match: Record<string, unknown> } : undefined;
       if (!query?.source || !query?.match) throw new Error("t.mount.query requires 'query' component with source and match");
       return createQueryTree({ source: query.source, match: query.match }, globalStore || parentStore);
     });

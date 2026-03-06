@@ -50,7 +50,6 @@ export async function treenity(config?: TreenityConfig): Promise<TreenityServer>
     work: { $type: 't.mount.fs', root: dataDir + '/work' },
   });
   rootNode.$acl = [
-    { g: 'public', p: R },
     { g: 'authenticated', p: R | S },
     { g: 'admins', p: R | W | A | S },
   ];

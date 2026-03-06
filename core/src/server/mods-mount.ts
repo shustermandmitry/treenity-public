@@ -11,8 +11,6 @@
 //   /sys/mods/{mod}/prefabs/{name}/      → prefab root (dir)
 //   /sys/mods/{mod}/prefabs/{name}/{...} → prefab nodes
 
-import '#mods/treenity/mod-type';
-
 import { createNode, type NodeData } from '#core';
 import { getLoadedMods } from '#mod/loader';
 import { getModPrefabs, getPrefab, getRegisteredMods } from '#mod/prefab';

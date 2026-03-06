@@ -312,6 +312,15 @@ describe('tRPC API integration', () => {
       const result = await caller.getChildren({ path: '/private' });
       assert.equal(result.items.length, 0);
     });
+
+    it('public cannot execute action on denied node', async () => {
+      // Node is inaccessible → execute returns NOT_FOUND (security: don't reveal existence)
+      await rawStore.set(createNode('/private/order', 'order.status', { status: 'new' }));
+      await assert.rejects(
+        () => caller.execute({ path: '/private/order', action: 'cook' }),
+        (e: any) => e.code === 'NOT_FOUND',
+      );
+    });
   });
 
   // ── Events ──
