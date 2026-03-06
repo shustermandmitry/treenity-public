@@ -1,30 +1,28 @@
 /* Launcher — iPhone home screen styles */
 
-/* Wiggle animation for edit mode */
-@keyframes launcher-wiggle {
-  0%   { rotate: -0.7deg; }
-  25%  { rotate:  0.5deg; }
-  50%  { rotate: -0.4deg; }
-  75%  { rotate:  0.7deg; }
-  100% { rotate: -0.7deg; }
+/* Edit mode — scale down + pulsing dashed border */
+@keyframes launcher-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.4; }
 }
 
-.launcher-wiggle {
-  animation: launcher-wiggle 0.5s ease-in-out infinite;
-  transform-origin: center center;
+.launcher-edit-item {
+  scale: 0.92;
+  position: relative;
 }
 
-/* Stagger for organic feel — each item slightly out of phase */
-.launcher-wiggle:nth-child(2n)  { animation-duration: 0.45s; animation-delay: 0.06s; }
-.launcher-wiggle:nth-child(3n)  { animation-duration: 0.55s; animation-delay: 0.12s; }
-.launcher-wiggle:nth-child(5n)  { animation-duration: 0.48s; animation-delay: 0.03s; }
-.launcher-wiggle:nth-child(7n)  { animation-duration: 0.52s; animation-delay: 0.09s; }
-
-/* Kill wiggle during active drag/resize — prevents fighting with RGL positioning */
-.react-draggable-dragging .launcher-wiggle,
-.resizing .launcher-wiggle {
-  animation: none;
+.launcher-edit-item::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 1rem;
+  border: 1.5px dashed rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  animation: launcher-pulse 2s ease-in-out infinite;
 }
+
+.launcher-edit-item:nth-child(2n)::after { animation-delay: 0.4s; }
+.launcher-edit-item:nth-child(3n)::after { animation-delay: 0.8s; }
 
 /* Glass-morphism for widgets */
 .launcher-glass {

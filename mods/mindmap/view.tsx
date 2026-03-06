@@ -8,6 +8,8 @@ import { MindMapSidebar } from './sidebar';
 import { type TreeItem, useTreeData } from './use-tree-data';
 import './mindmap.css';
 
+const DEFAULT_DIMS = { w: 800, h: 600 };
+
 // Deterministic branch color palette — visually distinct hues
 const PALETTE = [
   '#6366f1', // indigo
@@ -67,7 +69,7 @@ function MindMapView({ value }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([rootPath]));
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dims, setDims] = useState({ w: 800, h: 600 });
+  const [dims, setDims] = useState(DEFAULT_DIMS);
 
   // Measure container
   useEffect(() => {

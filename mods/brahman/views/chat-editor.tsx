@@ -411,7 +411,7 @@ function ButtonEditPopover({
   onDelete: () => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState({ ...button });
+  const [draft, setDraft] = useState(() => ({ ...button }));
 
   return createPortal(
     <div className="fixed inset-0 z-50" onClick={onClose}>
