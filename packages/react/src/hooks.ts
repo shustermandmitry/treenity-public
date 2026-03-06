@@ -50,7 +50,7 @@ export function usePath<T extends object>(
   const path = isTyped ? pathOrUri : (parsed?.path ?? null);
 
   const node = useSyncExternalStore(
-    useCallback((cb: () => void) => (path ? cache.subscribePath(path, cb) : () => {}), [path]),
+    useCallback((cb: () => void) => (path ? cache.subscribePath(path, cb) : () => { }), [path]),
     useCallback(() => (path ? cache.get(path) : undefined), [path]),
   );
 
@@ -111,8 +111,14 @@ export async function set(next: NodeData) {
 // ── execute: action caller ──
 
 export const execute = (
-  path: string, action: string, data?: unknown, type?: string, key?: string,
-) => trpc.execute.mutate({ path, type, key, action, data });
+  pathOrUri: string, action: string, data?: unknown, type?: string, key?: string,
+) => {
+  if (!key && pathOrUri.includes('#')) {
+    const { path, key } = parseURI(pathOrUri);
+    return trpc.execute.mutate({ path, type, key, action, data });
+  }
+  return trpc.execute.mutate({ path: pathOrUri, type, key, action, data });
+};
 
 // ── useCanWrite: ACL-based write permission check ──
 
@@ -141,7 +147,7 @@ export function useCanWrite(path: string | null): boolean {
 
 // ── Internals ──
 
-const AsyncGenFn = Object.getPrototypeOf(async function* () {}).constructor;
+const AsyncGenFn = Object.getPrototypeOf(async function* () { }).constructor;
 
 function streamToAsyncIterable<T>(
   input: { path: string; type?: string; key?: string; action: string; data?: unknown },

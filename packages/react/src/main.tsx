@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { enablePatches } from 'immer';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Toaster } from './components/ui/sonner';
 import { App } from './App';
 import './load-client';
 import './style.css';
@@ -17,6 +18,7 @@ createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
+      <Toaster />
     </QueryClientProvider>
   </StrictMode>,
 );

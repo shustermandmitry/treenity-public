@@ -4,6 +4,7 @@
 
 import type { NodeData } from '@treenity/core/core';
 import * as idb from './idb';
+import { stampNode } from './symbols';
 
 type Sub = () => void;
 
@@ -109,6 +110,7 @@ export function removeFromParent(path: string, parent: string) {
 // ── Writes ──
 
 export function put(node: NodeData, virtualParent?: string) {
+  stampNode(node);
   nodes.set(node.$path, node);
   const p = virtualParent ?? parentOf(node.$path);
   if (p !== null) {
@@ -135,6 +137,7 @@ export function putMany(items: NodeData[], virtualParent?: string) {
   const ts = Date.now();
   const idbEntries: idb.IDBEntry[] = [];
   for (const n of items) {
+    stampNode(n);
     nodes.set(n.$path, n);
     lastUpdated.set(n.$path, ts);
     fire(pathSubs, n.$path);
@@ -225,6 +228,7 @@ export async function hydrate(): Promise<void> {
   try {
     const entries = await idb.loadAll();
     for (const { data, lastUpdated: ts, virtualParent } of entries) {
+      stampNode(data);
       nodes.set(data.$path, data);
       lastUpdated.set(data.$path, ts);
       const p = virtualParent ?? parentOf(data.$path);

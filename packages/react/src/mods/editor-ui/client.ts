@@ -1,7 +1,7 @@
 import './default-view';
+import './default-edit';
 import './layout-view';
 import './user-view';
-import './dir-view';
 import './list-items';
 import { registerFormFields } from './form-fields';
 

@@ -1,6 +1,7 @@
 import { isOfType, type NodeData } from '@treenity/core/core';
 import { applyPatch, type Operation } from 'fast-json-patch';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { toast } from 'sonner';
 import * as cache from './cache';
 import { tree } from './client';
 import { NavigateProvider } from './hooks';
@@ -215,31 +216,42 @@ function NodeCount() {
 export function App() {
   const [authed, setAuthed] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  useEffect(() => {
-    (async () => {
-      const token = getToken();
-      if (!token) {
-        // Auto-create anonymous session
+  const initAuth = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      try {
         const { token: anonToken, userId } = await trpc.anonLogin.mutate();
         setToken(anonToken);
         setAuthed(userId);
         setAuthChecked(true);
-        return;
+      } catch {
+        toast.error('Server unavailable, retrying…');
+        retryTimer.current = setTimeout(initAuth, 3000);
       }
-      try {
-        const res = await trpc.me.query();
-        setAuthed(res?.userId ?? null);
-        if (!res) clearToken();
+      return;
+    }
+    try {
+      const res = await trpc.me.query();
+      setAuthed(res?.userId ?? null);
+      if (!res) clearToken();
+      setAuthChecked(true);
+    } catch (e: any) {
+      const isAuthError = e?.data?.code === 'UNAUTHORIZED' || e?.data?.httpStatus === 401;
+      if (isAuthError) {
+        clearToken();
         setAuthChecked(true);
-      } catch (e: any) {
-        // Only clear token on explicit auth rejection, not network errors
-        // Network errors during server restart should NOT destroy a valid token
-        const isAuthError = e?.data?.code === 'UNAUTHORIZED' || e?.data?.httpStatus === 401;
-        if (isAuthError) clearToken();
-        setAuthChecked(true);
+      } else {
+        toast.error('Server unavailable, retrying…');
+        retryTimer.current = setTimeout(initAuth, 3000);
       }
-    })();
+    }
+  }, []);
+
+  useEffect(() => {
+    initAuth();
+    return () => clearTimeout(retryTimer.current);
   }, []);
 
   // ── Route detection ──
@@ -592,10 +604,14 @@ export function App() {
     const handler = async () => {
       if (showLoginModal) return;
       clearToken();
-      const { token, userId } = await trpc.anonLogin.mutate();
-      setToken(token);
-      setAuthed(userId);
-      setShowLoginModal(true);
+      try {
+        const { token, userId } = await trpc.anonLogin.mutate();
+        setToken(token);
+        setAuthed(userId);
+        setShowLoginModal(true);
+      } catch {
+        toast.error('Server unavailable');
+      }
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, handler);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);

@@ -88,4 +88,4 @@ function FolderView({ value }: { value: NodeData }) {
   );
 }
 
-register('dir', 'react', FolderView as any);
+// register('dir', 'react', FolderView as any);

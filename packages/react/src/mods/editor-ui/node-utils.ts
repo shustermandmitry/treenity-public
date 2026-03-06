@@ -1,9 +1,9 @@
-import { getContextsForType, type NodeData, resolve } from '@treenity/core/core';
+import { getContextsForType, isComponent, type NodeData, resolve } from '@treenity/core/core';
 import type { PropertySchema, TypeSchema } from '@treenity/core/schema/types';
 
 export function getComponents(node: NodeData): [string, Record<string, unknown>][] {
   return Object.entries(node).filter(
-    ([k, v]) => !k.startsWith('$') && typeof v === 'object' && v !== null && '$type' in v,
+    ([k, v]) => !k.startsWith('$') && isComponent(v),
   ) as [string, Record<string, unknown>][];
 }
 

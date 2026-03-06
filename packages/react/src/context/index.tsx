@@ -10,7 +10,9 @@ import {
   resolveExact,
   subscribeRegistry,
 } from '@treenity/core/core';
-import { createContext, createElement, type FC, type ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, createElement, type FC, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { execute } from '#hooks';
+import { $key, $node } from '#symbols';
 
 // ── Tree context (rendering context string) ──
 
@@ -39,13 +41,29 @@ export function useCurrentNode(): NodeData {
   return n;
 }
 
+// ── viewCtx — derive location context from value's symbol metadata ──
+
+export type ViewCtx = {
+  node: NodeData;
+  path: string;
+  execute(action: string, data?: unknown): Promise<unknown>;
+};
+
+export function viewCtx(value: ComponentData): ViewCtx | null {
+  const node: NodeData | undefined = (value as any)[$node];
+  if (!node) return null;
+  const key: string = (value as any)[$key] ?? '';
+  const path = key ? `${node.$path}#${key}` : node.$path;
+  return { node, path, execute: (action, data?) => execute(path, action, data) };
+}
+
 // ── Handler type for React context ──
 // value is ComponentData (base type). NodeData IS ComponentData.
-// Renderers that need $path use usePath().
 
 export type RenderProps = {
   value: ComponentData;
   onChange?: (next: ComponentData) => void;
+  ctx?: ViewCtx | null;
 };
 
 export type ReactHandler = FC<RenderProps>;
@@ -56,15 +74,13 @@ declare module '@treenity/core/core/context' {
   }
 }
 
-// ── SystemFallbackView — registered by UIX when a type has no custom view ──
+// ── UixNoView — registered by UIX when a type has no custom view yet ──
 // Renders default@context without going through type-specific resolve (avoids infinite loop).
-export const SystemFallbackView: FC<RenderProps> = ({ value, onChange }) => {
+export const UixNoView: FC<RenderProps> = ({ value, onChange }) => {
   const context = useTreeContext();
   const def = resolve('default', context, false) as FC<RenderProps> | null;
   if (!def) return null;
-  const el = createElement(def, { value, onChange });
-  if ('$path' in value) return <NodeProvider value={value as NodeData}>{el}</NodeProvider>;
-  return el;
+  return createElement(def, { value, onChange });
 };
 
 // ── <Render> — component/node-level rendering ──
@@ -73,40 +89,35 @@ export function Render({ value, onChange }: RenderProps) {
   const context = useTreeContext();
   const type = value.$type;
 
-  // Tree actual handler in state so React Compiler can't optimize away the update
-  // (a dummy tick counter gets eliminated because its value is never read in render output)
-  const [Handler, setHandler] = useState<ReactHandler | null>(
-    () => resolveExact(type, context) as ReactHandler | null,
-  );
+  const ctx_ = context as 'react';
+  const sync = useMemo(() => resolveExact(type, ctx_), [type, ctx_]);
+  const [async_, setAsync] = useState<ReactHandler | null>(null);
 
-  // Subscribe to registry bumps. When handler is registered async (UIX lazy load),
-  // the callback fires and stores the resolved handler → triggers re-render.
   useEffect(() => {
-    const found = resolveExact(type, context) as ReactHandler | null;
-    if (found) { setHandler(() => found); return; }
-    setHandler(null); // Clear stale handler when type/context changes
-    if (hasMissResolver(context)) resolve(type, context);
-    const unsub = subscribeRegistry(() => {
-      const h = resolveExact(type, context) as ReactHandler | null;
-      if (h) setHandler(() => h);
-    });
-    return unsub;
-  }, [type, context]);
+    if (sync) return;
+    setAsync(null);
+    if (hasMissResolver(ctx_)) resolve(type, ctx_);
 
-  // Fallback: if no exact handler, try default/parent context resolution
-  let Final = Handler;
-  if (!Final) {
-    if (hasMissResolver(context)) {
-      resolve(type, context);
+    return subscribeRegistry(() => {
+      const h = resolveExact(type, ctx_);
+      if (h) setAsync(() => h);
+    });
+  }, [type, ctx_, sync]);
+
+  let Handler = sync ?? async_;
+
+  if (!Handler) {
+    if (hasMissResolver(ctx_)) {
+      resolve(type, ctx_);
       return null;
     }
-    Final = resolve(type, context, false) as ReactHandler | null;
+    Handler = resolve(type, ctx_, false);
   }
 
-  if (!Final) return null;
-  const el = createElement(Final, { value, onChange });
-  if ('$path' in value) return <NodeProvider value={value as NodeData}>{el}</NodeProvider>;
-  return el;
+  if (!Handler) return null;
+
+  const ctx = viewCtx(value);
+  return createElement(Handler, { value, onChange, ctx });
 }
 
 // ── <RenderField> — field-level rendering by type name ──

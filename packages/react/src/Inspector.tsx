@@ -11,18 +11,44 @@ import {
   getViewContexts,
   pickDefaultContext,
 } from '#mods/editor-ui/node-utils';
-import { type ComponentData, type GroupPerm, type NodeData, resolve } from '@treenity/core/core';
-import { renderField, StringArrayField } from '#mods/editor-ui/form-field';
+import { type ComponentData, type GroupPerm, type NodeData, isRef, resolve } from '@treenity/core/core';
 import type { TypeSchema } from '@treenity/core/schema/types';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { proxy, snapshot, useSnapshot } from 'valtio';
+import { toPlain } from '#lib/to-plain';
 import { AclEditor } from './AclEditor';
 import * as cache from './cache';
 import { ErrorBoundary } from './ErrorBoundary';
 import { set, usePath } from './hooks';
+import { FieldLabel, RefEditor } from '#mods/editor-ui/FieldLabel';
 import { useSchema } from './schema-loader';
 import { trpc } from './trpc';
 
 type AnyClass = { new(): Record<string, unknown> };
+
+function EditPanel({ node, type, data, onData }: {
+  node: NodeData;
+  type: string;
+  data: Record<string, unknown>;
+  onData: (d: Record<string, unknown>) => void;
+}) {
+  return (
+    <NodeProvider value={node}>
+      <RenderContext name="react:edit">
+        <Render
+          value={{ $type: type, ...data } as ComponentData}
+          onChange={(next: ComponentData) => {
+            const d: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(next as Record<string, unknown>)) {
+              if (!k.startsWith('$')) d[k] = v;
+            }
+            onData(d);
+          }}
+        />
+      </RenderContext>
+    </NodeProvider>
+  );
+}
 
 type Props = {
   path: string | null;
@@ -323,26 +349,29 @@ function NodeCard({
 export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSelect, onSetRoot, toast }: Props) {
   const node = usePath(path);
 
-  const [context, setContext] = useState('react');
-  const [editing, setEditing] = useState(false);
-  const [nodeType, setNodeType] = useState('');
-  const [compTexts, setCompTexts] = useState<Record<string, string>>({});
-  const [compData, setCompData] = useState<Record<string, Record<string, unknown>>>({});
-  const [plainData, setPlainData] = useState<Record<string, unknown>>({});
-  const [tab, setTab] = useState<'properties' | 'json'>('properties');
-  const [jsonText, setJsonText] = useState('');
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [aclOwner, setAclOwner] = useState('');
-  const [aclRules, setAclRules] = useState<GroupPerm[]>([]);
-  const [dirty, setDirty] = useState(false);
-  const [stale, setStale] = useState(false);
-  const syncedPathRef = useRef<string | null>(null);
-  const syncedRevRef = useRef<unknown>(null);
+  const [st] = useState(() => proxy({
+    context: 'react',
+    editing: false,
+    nodeType: '',
+    compTexts: {} as Record<string, string>,
+    compData: {} as Record<string, Record<string, unknown>>,
+    plainData: {} as Record<string, unknown>,
+    tab: 'properties' as 'properties' | 'json',
+    jsonText: '',
+    collapsed: { $node: true } as Record<string, boolean>,
+    aclOwner: '',
+    aclRules: [] as GroupPerm[],
+    dirty: false,
+    stale: false,
+    syncedPath: null as string | null,
+    syncedRev: null as unknown,
+  }));
+  const snap = useSnapshot(st);
 
   function syncFromNode(n: NodeData) {
-    setNodeType(n.$type);
-    setAclOwner((n.$owner as string) ?? '');
-    setAclRules(n.$acl ? [...(n.$acl as GroupPerm[])] : []);
+    st.nodeType = n.$type;
+    st.aclOwner = (n.$owner as string) ?? '';
+    st.aclRules = n.$acl ? [...(n.$acl as GroupPerm[])] : [];
     const texts: Record<string, string> = {};
     const cdata: Record<string, Record<string, unknown>> = {};
     for (const [name, comp] of getComponents(n)) {
@@ -353,52 +382,44 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
       }
       cdata[name] = d;
     }
-    setCompTexts(texts);
-    setCompData(cdata);
-    setPlainData(getPlainFields(n));
-    setJsonText(JSON.stringify(n, null, 2));
-    setTab('properties');
+    st.compTexts = texts;
+    st.compData = cdata;
+    st.plainData = getPlainFields(n);
+    st.jsonText = JSON.stringify(n, null, 2);
+    st.tab = 'properties';
   }
 
   useEffect(() => {
     if (!node) return;
 
-    const pathChanged = node.$path !== syncedPathRef.current;
+    const pathChanged = node.$path !== st.syncedPath;
     if (pathChanged) {
-      setContext(pickDefaultContext(node.$type));
+      st.context = pickDefaultContext(node.$type);
       syncFromNode(node);
-      syncedPathRef.current = node.$path;
-      syncedRevRef.current = node.$rev;
-      setDirty(false);
-      setStale(false);
+      st.syncedPath = node.$path;
+      st.syncedRev = node.$rev;
+      st.dirty = false;
+      st.stale = false;
       return;
     }
 
-    if (node.$rev !== syncedRevRef.current) {
-      if (dirty) {
-        setStale(true);
+    if (node.$rev !== st.syncedRev) {
+      if (st.dirty) {
+        st.stale = true;
       } else {
         syncFromNode(node);
-        syncedRevRef.current = node.$rev;
+        st.syncedRev = node.$rev;
       }
     }
   }, [node?.$path, node?.$rev]);
-
-  // Dirty-tracking wrappers — mark form as edited on any user change
-  const dSetNodeType: typeof setNodeType = (v) => { setNodeType(v); setDirty(true); };
-  const dSetCompData: typeof setCompData = (v) => { setCompData(v); setDirty(true); };
-  const dSetPlainData: typeof setPlainData = (v) => { setPlainData(v); setDirty(true); };
-  const dSetJsonText: typeof setJsonText = (v) => { setJsonText(v); setDirty(true); };
-  const dSetAclOwner: typeof setAclOwner = (v) => { setAclOwner(v); setDirty(true); };
-  const dSetAclRules: typeof setAclRules = (v) => { setAclRules(v); setDirty(true); };
 
   function handleReset() {
     if (!node) return;
     const current = cache.get(node.$path) ?? node;
     syncFromNode(current);
-    syncedRevRef.current = current.$rev;
-    setDirty(false);
-    setStale(false);
+    st.syncedRev = current.$rev;
+    st.dirty = false;
+    st.stale = false;
   }
 
   if (!node) {
@@ -425,26 +446,27 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
 
   async function handleSave() {
     if (!node) return;
+    const s = toPlain(snapshot(st));
     let toSave: NodeData;
-    if (tab === 'json') {
+    if (s.tab === 'json') {
       try {
-        toSave = JSON.parse(jsonText);
+        toSave = JSON.parse(s.jsonText);
       } catch {
         toast('Invalid JSON');
         return;
       }
     } else {
-      toSave = { $path: node.$path, $type: nodeType, ...plainData };
-      if (aclOwner) toSave.$owner = aclOwner;
-      if (aclRules.length > 0) toSave.$acl = aclRules;
+      toSave = { $path: node.$path, $type: s.nodeType, ...s.plainData } as NodeData;
+      if (s.aclOwner) toSave.$owner = s.aclOwner;
+      if (s.aclRules.length > 0) toSave.$acl = [...s.aclRules] as GroupPerm[];
       for (const [name, comp] of components) {
         const ctype = (comp as ComponentData).$type;
         const cschema = getSchema(ctype);
-        const cd = compData[name];
+        const cd = s.compData[name];
         if ((cschema || (cd && Object.keys(cd).length > 0)) && cd) {
           toSave[name] = { $type: ctype, ...cd };
         } else {
-          const text = compTexts[name];
+          const text = s.compTexts[name];
           if (text === undefined) continue;
           try {
             toSave[name] = JSON.parse(text);
@@ -459,10 +481,10 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
     const fresh = cache.get(node.$path);
     if (fresh) {
       syncFromNode(fresh);
-      syncedRevRef.current = fresh.$rev;
+      st.syncedRev = fresh.$rev;
     }
-    setDirty(false);
-    setStale(false);
+    st.dirty = false;
+    st.stale = false;
     toast('Saved');
   }
 
@@ -479,12 +501,7 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
   }
 
   function toggleCollapse(name: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
+    st.collapsed[name] = !st.collapsed[name];
   }
 
   return (
@@ -517,8 +534,8 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
               {viewContexts.map((c) => (
                 <button
                   key={c}
-                  className={`sm context-btn${context === c ? ' active' : ''}`}
-                  onClick={() => setContext(c)}
+                  className={`sm context-btn${snap.context === c ? ' active' : ''}`}
+                  onClick={() => { st.context = c; }}
                 >
                   {c.replace('react:', '')}
                 </button>
@@ -526,8 +543,8 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
             </span>
           )}
           <span className="spacer" />
-          <button className={editing ? 'sm' : 'sm primary'} onClick={() => setEditing(!editing)}>
-            {editing ? 'Close' : 'Edit'}
+          <button className={snap.editing ? 'sm' : 'sm primary'} onClick={() => { st.editing = !st.editing; }}>
+            {snap.editing ? 'Close' : 'Edit'}
           </button>
           <button
             className="sm danger"
@@ -543,7 +560,7 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
       {/* Rendered view */}
       <div className="editor-body">
         <ErrorBoundary>
-          <RenderContext name={context}>
+          <RenderContext name={snap.context}>
             <div className="node-view">
               <Render value={node} />
             </div>
@@ -552,26 +569,26 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
       </div>
 
       {/* Slide-out edit panel */}
-      <div className={`edit-panel${editing ? ' open' : ''}`}>
+      <div className={`edit-panel${snap.editing ? ' open' : ''}`}>
         <div className="edit-panel-header">
           <span>Edit {nodeName}</span>
-          <button className="sm ghost" onClick={() => setEditing(false)}>
+          <button className="sm ghost" onClick={() => { st.editing = false; }}>
             &#10005;
           </button>
         </div>
 
         <div className="edit-panel-tabs">
           <button
-            className={`editor-tab${tab === 'properties' ? ' active' : ''}`}
-            onClick={() => setTab('properties')}
+            className={`editor-tab${snap.tab === 'properties' ? ' active' : ''}`}
+            onClick={() => { st.tab = 'properties'; }}
           >
             Properties
           </button>
           <button
-            className={`editor-tab${tab === 'json' ? ' active' : ''}`}
+            className={`editor-tab${snap.tab === 'json' ? ' active' : ''}`}
             onClick={() => {
-              setTab('json');
-              setJsonText(JSON.stringify({ ...node, ...plainData }, null, 2));
+              st.tab = 'json';
+              st.jsonText = JSON.stringify({ ...node, ...st.plainData }, null, 2);
             }}
           >
             JSON
@@ -579,37 +596,33 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
         </div>
 
         <div className="edit-panel-body">
-          {tab === 'properties' ? (
+          {snap.tab === 'properties' ? (
             <>
-              <NodeCard path={node.$path} type={nodeType} onChangeType={dSetNodeType} />
-
+              <NodeCard path={node.$path} type={snap.nodeType} onChangeType={(v) => { st.nodeType = v; st.dirty = true; }} />
               <AclEditor
                 path={node.$path}
-                owner={aclOwner}
-                rules={aclRules}
+                owner={snap.aclOwner}
+                rules={snap.aclRules as GroupPerm[]}
                 currentUserId={currentUserId}
                 onChange={(o, r) => {
-                  dSetAclOwner(o);
-                  dSetAclRules(r);
+                  st.aclOwner = o; st.aclRules = r; st.dirty = true;
                 }}
               />
 
-              {(mainCompCls || schema) && (
-                <div className="card">
-                  <div className="card-header">{node.$type}</div>
+              <div className="card">
+                <div className="card-header">{node.$type}</div>
                   <ErrorBoundary>
-                    <ComponentBody
-                      ctype={node.$type}
-                      cdata={plainData}
-                      setCD={(fn) => dSetPlainData(fn)}
+                    <EditPanel node={node} type={node.$type} data={snap.plainData as Record<string, unknown>} onData={(d) => { st.plainData = d; st.dirty = true; }} />
+                    <ActionCardList
                       path={node.$path}
                       componentName=""
+                      compType={node.$type}
+                      compData={snap.plainData as Record<string, unknown>}
                       toast={toast}
                       onActionComplete={handleReset}
                     />
                   </ErrorBoundary>
                 </div>
-              )}
 
               {components.map(([name, comp]) => (
                 <div key={name} className="card">
@@ -625,25 +638,19 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
                       </button>
                     </span>
                   </div>
-                  {!collapsed.has(name) && (
+                  {!snap.collapsed[name] && (
                     <ErrorBoundary>
-                      <RenderContext name="react:edit">
-                        <Render
-                          value={{ $type: (comp as ComponentData).$type, ...(compData[name] ?? {}) } as ComponentData}
-                          onChange={(next: ComponentData) => {
-                            const d: Record<string, unknown> = {};
-                            for (const [k, v] of Object.entries(next as Record<string, unknown>)) {
-                              if (!k.startsWith('$')) d[k] = v;
-                            }
-                            dSetCompData((prev) => ({ ...prev, [name]: d }));
-                          }}
-                        />
-                      </RenderContext>
+                      <EditPanel
+                        node={node}
+                        type={(comp as ComponentData).$type}
+                        data={(snap.compData[name] ?? {}) as Record<string, unknown>}
+                        onData={(d) => { st.compData[name] = d; st.dirty = true; }}
+                      />
                       <ActionCardList
                         path={node.$path}
                         componentName={name}
                         compType={(comp as ComponentData).$type}
-                        compData={compData[name] ?? {}}
+                        compData={(snap.compData[name] ?? {}) as Record<string, unknown>}
                         toast={toast}
                         onActionComplete={handleReset}
                       />
@@ -652,21 +659,26 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
                 </div>
               ))}
 
-              {!schema && !mainCompDefaults && Object.keys(plainData).length > 0 && (
+              {!schema && !mainCompDefaults && Object.keys(snap.plainData).length > 0 && (
                 <div className="card">
                   <div className="card-header">Data</div>
                   <div className="card-body">
-                    {Object.entries(plainData).map(([k, v]) => (
-                      <div key={k} className="field">
-                        <label>{k}</label>
-                        <input
-                          value={typeof v === 'string' ? v : JSON.stringify(v)}
-                          onChange={(e) =>
-                            dSetPlainData((prev) => ({ ...prev, [k]: e.target.value }))
-                          }
-                        />
-                      </div>
-                    ))}
+                    {Object.entries(snap.plainData).map(([k, v]) => {
+                      const onCh = (next: unknown) => { st.plainData[k] = next; st.dirty = true; };
+                      return (
+                        <div key={k} className={`field${typeof v === 'object' && v !== null ? ' stack' : ''}`}>
+                          <FieldLabel label={k} value={v} onChange={onCh} />
+                          {typeof v === 'object' && isRef(v) ? (
+                            <RefEditor value={v as { $ref: string; $map?: string }} onChange={onCh} />
+                          ) : (
+                            <input
+                              value={typeof v === 'string' ? v : JSON.stringify(v)}
+                              onChange={(e) => { st.plainData[k] = e.target.value; st.dirty = true; }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -674,8 +686,8 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
           ) : (
             <div className="json-view">
               <textarea
-                value={jsonText}
-                onChange={(e) => dSetJsonText(e.target.value)}
+                value={snap.jsonText}
+                onChange={(e) => { st.jsonText = e.target.value; st.dirty = true; }}
                 spellCheck={false}
               />
             </div>
@@ -683,7 +695,7 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
         </div>
 
         <div className="edit-panel-actions">
-          {stale && (
+          {snap.stale && (
             <button className="ghost" onClick={handleReset} title="Node updated externally">
               Reset
             </button>
@@ -691,7 +703,7 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
           <button className="primary" onClick={handleSave}>
             Save
           </button>
-          {tab === 'properties' && (
+          {snap.tab === 'properties' && (
             <button onClick={handleAdd}>+ Component</button>
           )}
         </div>
