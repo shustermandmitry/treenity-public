@@ -14,6 +14,7 @@ import { withMounts } from './mount';
 import type { ReactiveTree } from './sub';
 import { unwatchAllQueries, withSubscriptions } from './sub';
 import { createTreeRouter, type TreeRouter, type TrpcContext } from './trpc';
+import { withRefIndex } from './refs';
 import { withValidation } from './validate';
 import { withVolatile } from './volatile';
 import { createWatchManager, type WatchManager } from './watch';
@@ -36,7 +37,8 @@ export function createPipeline(bootstrap: Tree): Pipeline {
   const mountable = withMounts(bootstrap);
   const volatile = withVolatile(mountable);
   const validated = withValidation(volatile);
-  const cached = withCache(validated);
+  const refsIndexed = withRefIndex(validated);
+  const cached = withCache(refsIndexed);
   const watcher = createWatchManager({
     onUserRemoved: (userId) => unwatchAllQueries(userId),
   });

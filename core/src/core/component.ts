@@ -13,25 +13,28 @@ export type ComponentData<T = Record<string, unknown>> = T & {
   $acl?: GroupPerm[];
 };
 
+export type RefEntry = { t: string; f?: string; d?: ComponentData };
+
 export type NodeData<T = Record<string, unknown>> = ComponentData<T> & {
   $path: string;
   $owner?: string;
   $rev?: number;
+  $refs?: RefEntry[];
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export type Class<T = unknown> = new (...args: any[]) => T;
 
-// Accept string, object with $type, or registered class (registerType stamps $type on constructor)
-export type TypeId<T = unknown> = string | { $type: string } | Class<T>;
+// Accept string or registered class (registerType stamps $type on constructor)
+export type TypeId<T = unknown> = string | Class<T>;
 
 // ── Type normalization ──
 // Dot-less types belong to treenity namespace: 'dir' → 't.dir', 'ref' → 't.ref'
 // Types with dots are already namespaced and returned as-is
 export function normalizeType(type: TypeId): string {
   if (typeof type === 'string') return type.includes('.') ? type : `t.${type}`;
-  if ('$type' in type && typeof (type as any).$type === 'string') return normalizeType((type as any).$type);
-  throw new Error('TypeId: object has no $type property');
+  if (typeof (type as any).$type === 'string') return normalizeType((type as any).$type);
+  throw new Error('TypeId: class not registered (missing $type)');
 }
 
 // ── Utils ──
@@ -40,17 +43,12 @@ export function isComponent(value: unknown): value is ComponentData {
   return typeof value === 'object' && value !== null && '$type' in value;
 }
 
-export function getCompByKey(node: NodeData, key: string): ComponentData | undefined {
-  const v = key === '' ? node : node[key];
-  return isComponent(v) ? v : undefined;
-}
-
-export const AnyType = { $type: 'any' };
+export const AnyType = 't.any';
 
 export function isOfType<T>(value: unknown, type: TypeId): value is ComponentData<T> {
   if (!isComponent(value)) return false;
   const t = normalizeType(type);
-  return t === 't.any' || normalizeType(value.$type) === t;
+  return t === AnyType || t === normalizeType(value.$type);
 }
 
 // ── Ref ──
