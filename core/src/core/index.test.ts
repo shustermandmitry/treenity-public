@@ -81,7 +81,7 @@ describe('Component access', () => {
 
   it('isComponent type guard', () => {
     assert.ok(isComponent(node['budget']));
-    assert.ok(!isComponent(node['missing']));
+    assert.ok(!isComponent((node as any)['missing']));
     assert.ok(!isComponent('string'));
     assert.ok(!isComponent(null));
   });

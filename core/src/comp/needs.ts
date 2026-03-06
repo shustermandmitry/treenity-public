@@ -1,4 +1,4 @@
-import { type ComponentData, getCompByKey, isComponent, type NodeData } from '#core';
+import { AnyType, type ComponentData, getComponent, isComponent, type NodeData } from '#core';
 import { basename, dirname, join } from '#core/path';
 import { type Tree } from '#tree';
 
@@ -51,7 +51,7 @@ function resolvePath(base: string, rel: string): string {
 export async function collectDeps(
   node: NodeData, componentName: string, actionName: string, store: Tree,
 ): Promise<ResolvedDeps> {
-  const cv = getCompByKey(node, componentName);
+  const cv = getComponent(node, AnyType, componentName);
   if (!cv) throw new Error(`Component "${componentName}" not found on ${node.$path}`);
 
   const specs = getActionNeeds(cv.$type, actionName);
@@ -96,7 +96,7 @@ export async function collectDeps(
 // ── Backward compat ──
 
 export function collectSiblings(node: NodeData, componentName: string): Record<string, ComponentData> {
-  const cv = getCompByKey(node, componentName);
+  const cv = getComponent(node, AnyType, componentName);
   if (!cv) throw new Error(`Component "${componentName}" not found on ${node.$path}`);
 
   const specs = getActionNeeds(cv.$type, '*');

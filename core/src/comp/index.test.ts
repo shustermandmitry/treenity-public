@@ -1,10 +1,13 @@
-// Tests for getComp, setComp, newComp
+// Tests for getComp, setComp, newComp, getCtx
 // Key behavior: when node.$type matches component $type, node itself IS the component.
 
-import { getComp, newComp, registerType, setComp } from '#comp';
-import { type NodeData } from '#core';
+import { getComp, getCtx, newComp, registerType, setComp } from '#comp';
+import { createNode, register, type NodeData } from '#core';
+import { createMemoryTree } from '#tree';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { clearRegistry } from '#core/index.test';
+import { executeAction } from '#server/actions';
 
 class TestItem {
   name = '';
@@ -125,5 +128,38 @@ describe('newComp', () => {
   it('$type cannot be overridden by data', () => {
     const comp = newComp(TestItem, { name: 'x', $type: 'hacked' } as any);
     assert.equal(comp.$type, 'test.item');
+  });
+});
+
+// ── getCtx ──
+
+describe('getCtx', () => {
+  it('throws when called outside action context', () => {
+    assert.throws(() => getCtx(), (e: Error) => e.message.includes('outside action context'));
+  });
+
+  it('ALS isolation: concurrent async actions each see their own ctx', async () => {
+    clearRegistry();
+
+    // Method yields to event loop then reads ctx — ALS must keep each action's ctx isolated
+    class AlsNode {
+      async whoami() {
+        await Promise.resolve(); // yield — lets the other action's handler run
+        return getCtx().node.$path;
+      }
+    }
+    registerType('als.test', AlsNode);
+
+    const store = createMemoryTree();
+    await store.set(createNode('/a', 'als.test'));
+    await store.set(createNode('/b', 'als.test'));
+
+    const [pathA, pathB] = await Promise.all([
+      executeAction(store, '/a', undefined, undefined, 'whoami'),
+      executeAction(store, '/b', undefined, undefined, 'whoami'),
+    ]);
+
+    assert.equal(pathA, '/a');
+    assert.equal(pathB, '/b');
   });
 });
