@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@source ".";
 @source "../../src/mods";
 
 /* shadcn/ui theme tokens mapped to Treenity dark theme */
@@ -10,7 +11,7 @@
   --color-popover: #161b22;
   --color-popover-foreground: #e6edf3;
   --color-primary: #2ecc71;
-  --color-primary-foreground: #0d1117;
+  --color-primary-foreground: #ffffff;
   --color-secondary: #21262d;
   --color-secondary-foreground: #e6edf3;
   --color-muted: #161b22;
@@ -486,6 +487,12 @@ body {
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+.card-header svg,
+.card-body svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 .card-body {
   padding: 2px 0 10px;

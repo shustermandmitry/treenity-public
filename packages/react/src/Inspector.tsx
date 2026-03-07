@@ -12,6 +12,7 @@ import {
   pickDefaultContext,
 } from '#mods/editor-ui/node-utils';
 import { type ComponentData, type GroupPerm, type NodeData, isRef, resolve } from '@treenity/core/core';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TypeSchema } from '@treenity/core/schema/types';
 import { useEffect, useState } from 'react';
 import { proxy, snapshot, useSnapshot } from 'valtio';
@@ -40,7 +41,8 @@ function EditPanel({ node, type, data, onData }: {
           onChange={(next: ComponentData) => {
             const d: Record<string, unknown> = {};
             for (const [k, v] of Object.entries(next as Record<string, unknown>)) {
-              if (!k.startsWith('$')) d[k] = v;
+              if (k === '$type' || k === '$path') continue;
+              d[k] = v;
             }
             onData(d);
           }}
@@ -322,11 +324,7 @@ function NodeCard({
         <span className="flex items-center gap-2 normal-case tracking-normal font-normal text-[11px] font-mono text-foreground/50">
           {path}
           <span className="text-primary">{type}</span>
-          {open ? (
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
-          ) : (
-            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>
-          )}
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </span>
       </div>
       {open && (
