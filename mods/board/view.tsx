@@ -1,17 +1,33 @@
 // Board views — kanban board + task detail (editable)
 
+import {
+  closestCorners,
+  DndContext,
+  type DragEndEvent,
+  type DragOverEvent,
+  DragOverlay,
+  type DragStartEvent,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { type NodeData, register } from '@treenity/core/core';
-import { Render, RenderContext } from '@treenity/react/context';
+import { Render, RenderContext, type View } from '@treenity/react/context';
 import { set, useChildren, useNavigate, usePath } from '@treenity/react/hooks';
 import { cn } from '@treenity/react/lib/utils';
 import { trpc } from '@treenity/react/trpc';
+import { minimd } from '@treenity/react/lib/minimd';
 import { Button } from '@treenity/react/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@treenity/react/ui/dialog';
+import { FormField } from '@treenity/react/ui/form-field';
 import { Input } from '@treenity/react/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@treenity/react/ui/select';
 import { Textarea } from '@treenity/react/ui/textarea';
-import { useRef, useState } from 'react';
-import { BoardColumn, BoardTask } from './types';
+import { useMemo, useRef, useState } from 'react';
+import { BoardColumn, BoardKanban, BoardTask } from './types';
 
 type TaskStatus = BoardTask['status'];
 
@@ -103,52 +119,111 @@ function TaskView({ value }: { value: NodeData }) {
         </div>
       )}
 
-      <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
-        <span className="text-muted-foreground">Status</span>
-        <div className="flex items-center gap-2">
-          <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium capitalize">{status}</span>
-          <TaskActions proxy={proxy} status={status} />
-        </div>
+      <div className="space-y-2 text-sm">
+        <FormField label="Status">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium capitalize">{status}</span>
+            <TaskActions proxy={proxy} status={status} />
+          </div>
+        </FormField>
 
-        <span className="text-muted-foreground">Priority</span>
-        <Select value={priority} onValueChange={v => save({ priority: v })}>
-          <SelectTrigger className="h-8 w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PRIORITIES.map(p => (
-              <SelectItem key={p.value} value={p.value}>
-                <span className="flex items-center gap-1.5">
-                  <PriorityDot priority={p.value} /> {p.label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <FormField label="Priority">
+          <Select value={priority} onValueChange={v => save({ priority: v })}>
+            <SelectTrigger className="h-8 w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map(p => (
+                <SelectItem key={p.value} value={p.value}>
+                  <span className="flex items-center gap-1.5">
+                    <PriorityDot priority={p.value} /> {p.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
 
-        <span className="text-muted-foreground">Assignee</span>
-        <BlurInput
-          value={assignee}
-          placeholder="Unassigned"
-          className="h-8 text-sm"
-          onSave={v => save({ assignee: v })}
-        />
+        <FormField label="Assignee">
+          <BlurInput
+            value={assignee}
+            placeholder="Unassigned"
+            className="h-8 text-sm"
+            onSave={v => save({ assignee: v })}
+          />
+        </FormField>
 
         {(status === 'review' || status === 'done' || result) && (
-          <>
-            <span className="text-muted-foreground">Result</span>
-            <Textarea
-              key={`res-${value.$path}`}
-              defaultValue={result}
-              placeholder="Result notes..."
-              className="min-h-12 resize-none text-sm"
-              onBlur={e => {
-                if (e.target.value !== result) save({ result: e.target.value });
-              }}
-            />
-          </>
+          <FormField label="Result">
+            <ResultField path={value.$path} result={result} onSave={v => save({ result: v })} />
+          </FormField>
         )}
       </div>
+
+      <EmbeddedTaskLog taskRef={typeof node.taskRef === 'string' ? node.taskRef : ''} />
+    </div>
+  );
+}
+
+function ResultField({ path, result, onSave }: { path: string; result: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const html = useMemo(() => result ? minimd(result) : '', [result]);
+
+  if (editing) {
+    return (
+      <Textarea
+        key={`res-${path}`}
+        defaultValue={result}
+        placeholder="Result notes..."
+        className="min-h-20 max-h-60 resize-none text-sm"
+        autoFocus
+        onBlur={e => {
+          if (e.target.value !== result) onSave(e.target.value);
+          setEditing(false);
+        }}
+      />
+    );
+  }
+
+  if (!result) {
+    return (
+      <div
+        className="cursor-pointer rounded border border-dashed border-border p-2 text-sm text-muted-foreground hover:border-foreground/30"
+        onClick={() => setEditing(true)}
+      >
+        Add result...
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="minimd cursor-pointer rounded border border-transparent p-2 text-sm max-h-60 overflow-y-auto hover:border-border"
+      onClick={() => setEditing(true)}
+      title="Click to edit"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+function EmbeddedTaskLog({ taskRef }: { taskRef: string }) {
+  const mtTask = usePath(taskRef || null) as NodeData | undefined;
+  if (!mtTask) return null;
+
+  return (
+    <div className="mt-2 rounded-md border border-border p-2">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="text-[10px] font-medium uppercase text-muted-foreground">Agent Log</span>
+        <span className={cn(
+          'rounded px-1.5 py-0.5 text-[10px] font-medium',
+          mtTask.status === 'running' ? 'bg-sky-500/20 text-sky-400' :
+          mtTask.status === 'done' ? 'bg-emerald-500/20 text-emerald-400' :
+          'bg-red-500/20 text-red-400',
+        )}>
+          {String(mtTask.status)}
+        </span>
+      </div>
+      <Render value={mtTask} />
     </div>
   );
 }
@@ -227,7 +302,7 @@ function BlurInput({ value, onSave, ...props }: {
 
 // ── Task card (kanban) ──
 
-function TaskCard({ task, onSelect }: { task: NodeData; onSelect: (path: string) => void }) {
+function TaskCardContent({ task, isDragging }: { task: NodeData; isDragging?: boolean }) {
   const proxy = usePath(task.$path, BoardTask);
 
   const title = typeof proxy?.title === 'string' && proxy.title
@@ -236,20 +311,20 @@ function TaskCard({ task, onSelect }: { task: NodeData; onSelect: (path: string)
   const assignee = typeof proxy?.assignee === 'string' ? proxy.assignee : '';
   const priority = typeof proxy?.priority === 'string' ? proxy.priority : 'normal';
   const result = typeof proxy?.result === 'string' ? proxy.result : '';
-  const aiStatus = typeof (task as any).aiStatus === 'string' ? (task as any).aiStatus : '';
+  const aiStatus = typeof task.aiStatus === 'string' ? task.aiStatus : '';
   const isAi = assignee === 'metatron' || !!aiStatus;
 
   return (
-    <div
-      className="mb-2 cursor-pointer rounded-md border border-border bg-card p-3 shadow-sm transition-colors hover:bg-accent/50"
-      onClick={() => onSelect(task.$path)}
-    >
+    <div className={cn(
+      'mb-2 rounded-md border border-border bg-card p-3 shadow-sm transition-colors',
+      isDragging ? 'opacity-50' : 'hover:bg-accent/50',
+    )}>
       <div className="mb-1 flex items-center gap-2">
         <PriorityDot priority={priority} />
         <span className="flex-1 text-sm font-semibold leading-tight">{title}</span>
         {aiStatus ? (
           <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-medium text-violet-400">
-            {aiStatus}
+            {String(aiStatus)}
           </span>
         ) : isAi ? <AiBadge /> : null}
       </div>
@@ -265,14 +340,41 @@ function TaskCard({ task, onSelect }: { task: NodeData; onSelect: (path: string)
   );
 }
 
+function TaskCard({ task, onSelect, colStatus }: { task: NodeData; onSelect: (path: string) => void; colStatus: string }) {
+  const proxy = usePath(task.$path, BoardTask);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.$path,
+    data: { task, status: colStatus, move: proxy.move },
+  });
+
+  // dnd-kit requires inline style for runtime-computed transforms
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className="cursor-grab active:cursor-grabbing"
+      style={style}
+      onClick={() => { if (!isDragging) onSelect(task.$path); }}
+    >
+      <TaskCardContent task={task} isDragging={isDragging} />
+    </div>
+  );
+}
+
 // ── Column ──
 
-function Column({ col, onSelect }: { col: NodeData; onSelect: (path: string) => void }) {
+function Column({ col, onSelect, highlighted }: { col: NodeData; onSelect: (path: string) => void; highlighted?: boolean }) {
   const proxy = usePath(col.$path, BoardColumn);
   const tasks = useChildren(col.$path, { watch: true, watchNew: true });
+  const status = col.$path.split('/').at(-1) ?? '';
+  const { setNodeRef } = useDroppable({ id: `col:${status}`, data: { status } });
 
-  const label = typeof proxy?.label === 'string' ? proxy.label : col.$path.split('/').at(-1);
+  const label = typeof proxy?.label === 'string' ? proxy.label : status;
   const color = typeof proxy?.color === 'string' ? proxy.color : 'border-zinc-400';
+  const taskIds = useMemo(() => tasks.map(t => t.$path), [tasks]);
 
   return (
     <div className="flex min-w-40 flex-1 flex-col">
@@ -281,32 +383,50 @@ function Column({ col, onSelect }: { col: NodeData; onSelect: (path: string) => 
         <span className="text-xs text-muted-foreground">({tasks.length})</span>
       </div>
 
-      <div className="flex-1">
-        {tasks.map(task => (
-          <TaskCard key={task.$path} task={task} onSelect={onSelect} />
-        ))}
+      <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+        <div
+          ref={setNodeRef}
+          className={cn(
+            'flex-1 rounded-md p-1 transition-colors min-h-16',
+            highlighted && 'bg-accent/30 ring-1 ring-accent',
+          )}
+        >
+          {tasks.map(task => (
+            <TaskCard key={task.$path} task={task} onSelect={onSelect} colStatus={status} />
+          ))}
 
-        {tasks.length === 0 && (
-          <div className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
-            Empty
-          </div>
-        )}
-      </div>
+          {tasks.length === 0 && (
+            <div className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+              {highlighted ? 'Drop here' : 'Empty'}
+            </div>
+          )}
+        </div>
+      </SortableContext>
     </div>
   );
 }
 
 // ── Kanban Board ──
 
-function KanbanView({ value }: { value: NodeData }) {
+const KanbanView: View<BoardKanban> = ({ value, ctx }) => {
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [activeTask, setActiveTask] = useState<NodeData | null>(null);
+  const [overColumn, setOverColumn] = useState<string | null>(null);
   const selectedNode = usePath(selectedTask ?? '') as NodeData | undefined;
-  const basePath = value.$path;
+  const basePath = ctx!.path;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const children = useChildren(basePath, { watch: true, watchNew: true });
   const columns = children
     .filter(c => c.$type === 'board.column')
-    .sort((a, b) => ((a as any).order ?? 0) - ((b as any).order ?? 0));
+    .sort((a, b) => {
+      const oa = typeof a.order === 'number' ? a.order : 0;
+      const ob = typeof b.order === 'number' ? b.order : 0;
+      return oa - ob;
+    });
 
   const createTask = async () => {
     const id = Date.now().toString(36).toUpperCase();
@@ -326,6 +446,46 @@ function KanbanView({ value }: { value: NodeData }) {
     });
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const task = event.active.data.current?.task;
+    if (task && typeof task === 'object' && '$path' in task) {
+      setActiveTask(task as NodeData);
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const over = event.over;
+    if (!over) { setOverColumn(null); return; }
+
+    // Over a column droppable
+    const overId = String(over.id);
+    if (overId.startsWith('col:')) { setOverColumn(overId.slice(4)); return; }
+
+    // Over a card — get its column status
+    const status = over.data.current?.status;
+    setOverColumn(typeof status === 'string' ? status : null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveTask(null);
+    setOverColumn(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    // Target is either a column droppable (col:status) or a card sortable (has data.status)
+    const overId = String(over.id);
+    const targetStatus = over.data.current?.status
+      ?? (overId.startsWith('col:') ? overId.slice(4) : undefined);
+    if (typeof targetStatus !== 'string') return;
+
+    const src = active.data.current;
+    if (!src?.task || typeof src.task !== 'object' || !('status' in src.task)) return;
+    if (src.task.status === targetStatus) return;
+
+    const move = src.move;
+    if (typeof move === 'function') move({ status: targetStatus });
+  };
+
   return (
     <div className="view-full px-4 py-3">
       <div className="mb-3 flex items-center justify-between">
@@ -333,11 +493,21 @@ function KanbanView({ value }: { value: NodeData }) {
         <Button onClick={createTask}>+ New Task</Button>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {columns.map(col => (
-          <Column key={col.$path} col={col} onSelect={setSelectedTask} />
-        ))}
-      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {columns.map(col => (
+            <Column key={col.$path} col={col} onSelect={setSelectedTask} highlighted={overColumn === (col.$path.split('/').at(-1) ?? '')} />
+          ))}
+        </div>
+
+        <DragOverlay>
+          {activeTask && (
+            <div className="w-60 rotate-2 opacity-90">
+              <TaskCardContent task={activeTask} />
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
 
       {selectedTask && selectedNode && (
         <Dialog open onOpenChange={open => { if (!open) setSelectedTask(null); }}>
@@ -349,9 +519,9 @@ function KanbanView({ value }: { value: NodeData }) {
       )}
     </div>
   );
-}
+};
 
-register('board.kanban', 'react', KanbanView as any);
+register('board.kanban', 'react', KanbanView);
 
 // ── board.column view ──
 

@@ -54,6 +54,13 @@ export class BoardTask {
     this.updatedAt = Date.now();
   }
 
+  /** @description Move task to any status (kanban DnD) */
+  move(data: { /** Target status */ status: 'backlog' | 'todo' | 'doing' | 'review' | 'done' }) {
+    if (this.status === data.status) return;
+    this.status = data.status;
+    this.updatedAt = Date.now();
+  }
+
   /** @description Reopen task — reset to backlog */
   reopen() {
     this.status = 'backlog';
@@ -64,6 +71,11 @@ export class BoardTask {
 }
 
 registerType('board.task', BoardTask);
+
+/** Kanban board — container node, columns are children */
+export class BoardKanban {}
+
+registerType('board.kanban', BoardKanban);
 
 /** Kanban column — label + color + sort order. Query mount provides filtered tasks. */
 export class BoardColumn {

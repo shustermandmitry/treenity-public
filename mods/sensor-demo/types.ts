@@ -10,3 +10,11 @@ export class SensorDemo {
   }
 }
 registerType('examples.demo.sensor', SensorDemo);
+
+/** @description A single sensor reading data point */
+export class SensorReading {
+  ts = 0;
+  value = 0;
+  seq = 0;
+}
+registerType('examples.demo.sensor.reading', SensorReading);

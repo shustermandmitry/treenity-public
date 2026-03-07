@@ -1,4 +1,4 @@
-import { Render, RenderContext, useCurrentNode } from '@treenity/react/context';
+import { Render, RenderContext, type ViewCtx } from '@treenity/react/context';
 import { useChildren } from '@treenity/react/hooks';
 import { useSchema } from '@treenity/react/schema-loader';
 import { type ComponentData, isComponent, type NodeData, register } from '@treenity/core/core';
@@ -63,8 +63,9 @@ function buildColumnsFromData(rows: Record<string, unknown>[]): ColumnConfig[] {
 
 const TABLE_DEFAULTS: UITable = { displayType: '', field: '', pageSize: 25, page: 0, sort: '', sortDir: 'asc', columns: {} };
 
-function TableView({ value }: { value: ComponentData }) {
-  const node = useCurrentNode();
+function TableView({ value, ctx }: { value: ComponentData; ctx?: ViewCtx | null }) {
+  if (!ctx?.node) throw new Error('TableView: no node context');
+  const node = ctx.node;
   const componentKey = useMemo(() => {
     for (const [k, v] of Object.entries(node)) {
       if (v === value) return k;

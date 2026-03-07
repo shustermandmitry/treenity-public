@@ -230,7 +230,7 @@ export function PageLayoutView({ value }: { value: NodeData }) {
         <label className="text-sm font-medium text-muted-foreground w-20">Command</label>
         <Input
           className="flex-1 font-mono"
-          placeholder="/start"
+          placeholder="/command..."
           value={localCommand}
           onChange={e => {
             setLocalCommand(e.target.value);

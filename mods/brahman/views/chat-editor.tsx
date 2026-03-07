@@ -727,7 +727,7 @@ export function PageChatEditor({ value }: { value: NodeData }) {
         <input
           className="text-[11px] text-[#6c7883] bg-[#131c26] rounded-full px-3 py-1 font-mono
             text-center border-none outline-none focus:ring-1 focus:ring-[#3d6a99] w-32"
-          placeholder="/start"
+          placeholder="/command..."
           value={localCmd}
           onChange={e => {
             setLocalCmd(e.target.value);

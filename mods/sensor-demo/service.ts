@@ -1,7 +1,8 @@
 // Sensor demo — generates fake readings every second as children
 
-import { type NodeData, register } from '@treenity/core/core';
+import { createNode, register } from '@treenity/core/core';
 import '@treenity/core/contexts/service';
+import { SensorReading } from './types';
 
 register('examples.demo.sensor', 'service', async (node, ctx) => {
   let seq = 0;
@@ -9,13 +10,11 @@ register('examples.demo.sensor', 'service', async (node, ctx) => {
   const timer = setInterval(async () => {
     const ts = Date.now();
     const name = String(ts).slice(-6).padStart(6, '0');
-    await ctx.store.set({
-      $path: `${node.$path}/${name}`,
-      $type: 'sensor-reading',
+    await ctx.store.set(createNode(`${node.$path}/${name}`, SensorReading, {
       ts,
       value: +(20 + Math.sin(seq * 0.1) * 5 + Math.random() * 2).toFixed(1),
       seq: seq++,
-    } as NodeData);
+    }));
     // Trim old readings
     const { items } = await ctx.store.getChildren(node.$path);
     if (items.length > MAX) {
