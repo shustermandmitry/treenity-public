@@ -4,7 +4,7 @@
 // Auto-promotes leaf→dir when children appear, demotes dir→leaf when last child removed.
 
 import type { NodeData } from '#core';
-import { dirname as treeDirname, isChildPath } from '#core/path';
+import { dirname as treeDirname } from '#core/path';
 import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import sift from 'sift';
@@ -128,10 +128,12 @@ export async function createFsTree(rootDir: string): Promise<Tree> {
     }
   }
 
-  // Walk all nodes in both forms
-  async function allNodes(): Promise<NodeData[]> {
+  // Collect children of a tree path up to given depth by walking only the relevant FS subtree
+  async function collectChildren(parent: string, depth: number): Promise<NodeData[]> {
     const results: NodeData[] = [];
-    async function walk(dir: string) {
+    const fsDir = resolve(join(rootDir, parent));
+
+    async function walk(dir: string, currentDepth: number) {
       let entries;
       try { entries = await readdir(dir, { withFileTypes: true }); } catch (e: any) {
         if (e.code === 'ENOENT') return;
@@ -139,14 +141,24 @@ export async function createFsTree(rootDir: string): Promise<Tree> {
       }
 
       for (const e of entries) {
+        if (e.name === '$.json') continue; // parent's own data, not a child
         const full = join(dir, e.name);
-        if (e.isDirectory()) { await walk(full); continue; }
-        if (e.name.endsWith('.json')) {
-          results.push(JSON.parse(await readFile(full, 'utf-8')));
+
+        if (e.isDirectory()) {
+          // Directory child — read its $.json if exists
+          const childPath = full.slice(rootDir.length) || '/';
+          const node = await readNode(childPath);
+          if (node) results.push(node);
+          if (currentDepth < depth) await walk(full, currentDepth + 1);
+        } else if (e.name.endsWith('.json')) {
+          // Leaf child — name.json
+          const node: NodeData = JSON.parse(await readFile(full, 'utf-8'));
+          results.push(node);
         }
       }
     }
-    await walk(rootDir);
+
+    await walk(fsDir, 1);
     return results;
   }
 
@@ -157,13 +169,7 @@ export async function createFsTree(rootDir: string): Promise<Tree> {
 
     async getChildren(parent, opts) {
       const depth = opts?.depth ?? 1;
-      const all = await allNodes();
-      let filtered = all.filter((n) => {
-        if (!isChildPath(parent, n.$path, false)) return false;
-        if (depth === Infinity) return true;
-        const rest = parent === '/' ? n.$path.slice(1) : n.$path.slice(parent.length + 1);
-        return rest.split('/').length <= depth;
-      });
+      let filtered = await collectChildren(parent, depth);
       if (opts?.query) {
         const test = sift(opts.query);
         filtered = filtered.filter(n => test(mapNodeForSift(n)));

@@ -141,6 +141,15 @@ describe('Path utils', () => {
     assert.equal(isChildPath('/tasks', '/tasks/123/sub', false), true);
     assert.equal(isChildPath('/', '/tasks/123', false), true);
   });
+
+  // Regression: /board must not match /boards (prefix overlap without separator)
+  it('isChildPath rejects prefix overlap without separator', () => {
+    assert.equal(isChildPath('/board', '/boards'), false);
+    assert.equal(isChildPath('/board', '/boards/test'), false);
+    assert.equal(isChildPath('/board', '/boards/test', false), false);
+    assert.equal(isChildPath('/board', '/board/real'), true);
+    assert.equal(isChildPath('/board', '/board/real/deep', false), true);
+  });
 });
 
 describe('Context', () => {
