@@ -71,6 +71,24 @@ export type ReactHandler = FC<RenderProps<any>>;
 /** Typed view component. Use: `const MyView: View<MyType> = ({ value, ctx }) => ...` */
 export type View<T> = FC<RenderProps<T>>;
 
+// ── useActions — proxy that turns value's symbol metadata into action calls ──
+
+type Actions<T> = {
+  [K in keyof T as T[K] extends (...args: any[]) => any ? K : never]:
+    T[K] extends (data: infer D) => any
+      ? (data: D) => Promise<unknown>
+      : () => Promise<unknown>;
+};
+
+export function useActions<T extends ComponentData>(value: T): Actions<T> {
+  const ctx = viewCtx(value);
+  if (!ctx) throw new Error('useActions: value has no node context (missing $node symbol)');
+
+  return useMemo(() => new Proxy({} as Actions<T>, {
+    get: (_target, prop: string) => (data?: unknown) => ctx.execute(prop, data),
+  }), [ctx.path]);
+}
+
 declare module '@treenity/core/core/context' {
   interface ContextHandlers<T> {
     react: FC<RenderProps<T>>;

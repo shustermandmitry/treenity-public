@@ -5,6 +5,7 @@ import { Render, RenderContext } from '#context';
 import { useChildren } from '#hooks';
 import { type ComponentData, type NodeData, register } from '@treenity/core/core';
 import { getComponents, getPlainFields } from './node-utils';
+import { EmptyNodePlaceholder } from './empty-placeholder';
 
 function DefaultLayout({ value }: { value: ComponentData }) {
   if (!('$path' in value)) return null;
@@ -54,9 +55,10 @@ function DefaultLayout({ value }: { value: ComponentData }) {
         </RenderContext>
       )}
 
-      {children.length === 0 && !hasInfo && <div className="node-empty">Empty node</div>}
+      {children.length === 0 && !hasInfo && <EmptyNodePlaceholder value={node} />}
     </div>
   );
 }
+
 
 register('default', 'react:layout', DefaultLayout as any);

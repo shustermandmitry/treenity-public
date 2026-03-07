@@ -1,7 +1,28 @@
 {
   "name": "@treenity/react",
   "version": "3.0.0",
+  "description": "React binding for Treenity — reactive hooks, admin UI, and context-based component rendering.",
   "type": "module",
+  "license": "AGPL-3.0",
+  "author": "Treenity <hello@treenity.ai> (https://treenity.ai)",
+  "homepage": "https://github.com/treenity-ai/treenity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treenity-ai/treenity.git",
+    "directory": "packages/react"
+  },
+  "keywords": [
+    "treenity",
+    "react",
+    "hooks",
+    "reactive",
+    "tree",
+    "composable",
+    "admin",
+    "ui",
+    "mcp",
+    "ai-native"
+  ],
   "imports": {
     "#*": { "development": ["./src/*.ts", "./src/*.tsx"], "default": ["./dist/*.js", "./dist/*.jsx"] }
   },
@@ -15,7 +36,12 @@
     "clients": "./src/mods/clients.ts",
     "servers": "./src/mods/servers.ts"
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",

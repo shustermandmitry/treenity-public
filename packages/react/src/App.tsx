@@ -1,4 +1,4 @@
-import { isOfType, type NodeData } from '@treenity/core/core';
+import type { NodeData } from '@treenity/core/core';
 import { applyPatch, type Operation } from 'fast-json-patch';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
@@ -6,122 +6,13 @@ import * as cache from './cache';
 import { tree } from './client';
 import { NavigateProvider } from './hooks';
 import { Inspector } from './Inspector';
+import { TypePicker } from '#mods/editor-ui/type-picker';
 import { Tree } from './Tree';
 import { AUTH_EXPIRED_EVENT, clearToken, getToken, setToken, trpc } from './trpc';
 import { ViewPage } from './ViewPage';
 
 // Hydrate from IDB before first render — fires bump() when done → reactive re-render
 cache.hydrate();
-
-type TypeInfo = { type: string; label: string };
-
-async function loadTypes(): Promise<TypeInfo[]> {
-  const { items } = (await trpc.getChildren.query({ path: '/sys/types', limit: 0, depth: 99 })) as {
-    items: NodeData[];
-    total: number;
-  };
-  return items
-    .filter((n) => isOfType(n, 'type'))
-    .map((n) => {
-      const schema = n.schema as { $type: string; title?: string } | undefined;
-      const typeName = n.$path.slice('/sys/types/'.length).replace(/\//g, '.');
-      return { type: typeName, label: schema?.title ?? typeName };
-    });
-}
-
-function TypePicker({
-  onSelect,
-  onCancel,
-  title = 'Create Node',
-  nameLabel = 'Node name',
-  action = 'Create',
-}: {
-  onSelect: (name: string, type: string) => void;
-  onCancel: () => void;
-  title?: string;
-  nameLabel?: string;
-  action?: string;
-}) {
-  const [types, setTypes] = useState<TypeInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState('');
-  const [name, setName] = useState('');
-  const [selectedType, setSelectedType] = useState<string | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    loadTypes()
-      .then(setTypes)
-      .catch((err) => {
-        console.error('Failed to load types:', err);
-        setError('Failed to load types');
-      })
-      .finally(() => setLoading(false));
-  }, []);
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
-
-  const lf = filter.toLowerCase();
-  const filtered = types.filter(
-    (t) => t.type.toLowerCase().includes(lf) || t.label.toLowerCase().includes(lf),
-  );
-
-  return (
-    <div className="type-picker-overlay" onClick={onCancel}>
-      <div className="type-picker" onClick={(e) => e.stopPropagation()}>
-        <div className="type-picker-header">{title}</div>
-        <div className="type-picker-search">
-          <input
-            ref={nameRef}
-            placeholder={nameLabel}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            placeholder="Filter types..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-        </div>
-        <div className="type-picker-list">
-          {filtered.map((t) => (
-            <div
-              key={t.type}
-              className={`type-picker-item${selectedType === t.type ? ' active' : ''}`}
-              onClick={() => setSelectedType(t.type)}
-            >
-              <span className="type-name">{t.type}</span>
-              {t.label !== t.type && <span className="type-label">{t.label}</span>}
-            </div>
-          ))}
-          {loading && (
-            <div className="p-3 text-[--text-3] text-[13px]">Loading types...</div>
-          )}
-          {error && (
-            <div className="p-3 text-[--danger] text-[13px]">{error}</div>
-          )}
-          {!loading && !error && filtered.length === 0 && (
-            <div className="p-3 text-[--text-3] text-[13px]">No types found</div>
-          )}
-        </div>
-        <div className="type-picker-footer">
-          <button onClick={onCancel}>Cancel</button>
-          <button
-            className="primary"
-            disabled={!name || !selectedType}
-            onClick={() => onSelect(name, selectedType!)}
-          >
-            {action}
-            {name ? ` "${name}"` : ''}
-            {selectedType ? ` as ${selectedType}` : ''}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function LoginForm({ onLogin }: { onLogin: (userId: string) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -778,6 +669,7 @@ export function App() {
           title="Add Component"
           nameLabel="Component name"
           action="Add"
+          autoName
           onSelect={handlePickComponent}
           onCancel={() => setAddingComponentAt(null)}
         />

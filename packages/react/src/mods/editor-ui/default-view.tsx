@@ -4,6 +4,7 @@ import { trpc } from '#trpc';
 import { type ComponentData, type NodeData, register } from '@treenity/core/core';
 import { useCallback, useState } from 'react';
 import { getComponents, getPlainFields, getSchema } from './node-utils';
+import { EmptyNodePlaceholder } from './empty-placeholder';
 
 /** Fallback for components without their own react handler */
 function ComponentFieldsView({ value }: { value: ComponentData }) {
@@ -134,7 +135,7 @@ function DefaultNodeView({ value }: { value: NodeData }) {
         </RenderContext>
       )}
 
-      {children.length === 0 && !hasInfo && <div className="node-empty">Empty node</div>}
+      {children.length === 0 && !hasInfo && <EmptyNodePlaceholder value={value} />}
     </div>
   );
 }
