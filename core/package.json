@@ -1,19 +1,54 @@
 {
   "name": "@treenity/core",
   "version": "3.0.0",
+  "description": "Composable typed tree engine — three primitives, everything else composes. Nodes, components, contexts.",
   "type": "module",
+  "license": "AGPL-3.0",
+  "author": "Treenity <hello@treenity.ai> (https://treenity.ai)",
+  "homepage": "https://github.com/treenity-ai/treenity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treenity-ai/treenity.git"
+  },
+  "keywords": [
+    "treenity",
+    "tree",
+    "composable",
+    "typed",
+    "ecs",
+    "node",
+    "component",
+    "context",
+    "mcp",
+    "ai-native"
+  ],
   "imports": {
-    "#*": { "development": "./src/*.ts", "default": "./dist/*.js" }
+    "#*": {
+      "development": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
   },
   "exports": {
-    ".":   { "development": "./src/index.ts", "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./*": { "development": "./src/*.ts", "types": "./dist/*.d.ts", "default": "./dist/*.js" }
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
   },
   "treenity": {
     "clients": "./src/mods/clients.ts",
     "servers": "./src/mods/servers.ts"
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
@@ -25,13 +60,14 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.58",
     "@grammyjs/runner": "^2.0.3",
     "@huggingface/transformers": "^3.8.1",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@orama/orama": "^3.1.18",
     "@trpc/server": "^11.9.0",
     "dotenv": "^17.2.4",
     "fast-json-patch": "^3.1.1",
     "grammy": "^1.39.3",
     "immer": "^11.1.4",
+    "mongoose": "^9.2.4",
     "quickjs-emscripten": "^0.32.0",
     "sift": "^17.1.3",
     "uuid": "^13.0.0",
