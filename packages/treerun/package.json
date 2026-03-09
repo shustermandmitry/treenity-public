@@ -1,0 +1,16 @@
+{
+  "name": "treerun",
+  "version": "0.1.0",
+  "description": "Run Treenity — typed world engine for AI agents",
+  "type": "module",
+  "bin": {
+    "treerun": "./bin.mjs"
+  },
+  "files": ["bin.mjs"],
+  "keywords": ["treenity", "ai", "agents", "mcp", "tree", "ecs"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treenity-ai/treenity"
+  }
+}
