@@ -2,6 +2,8 @@
 // StreamableHTTP transport, stateless, token auth via ?token= or Authorization header
 
 import { createNode } from '#core';
+import { getComponent } from '#core/index';
+import { AiPolicy } from '#mods/agent/types';
 import { verifyViewSource } from '#mods/uix/verify';
 import { TypeCatalog } from '#schema/catalog';
 import type { Tree } from '#tree';
@@ -12,6 +14,41 @@ import { z } from 'zod/v3';
 import { executeAction } from './actions';
 import { buildClaims, resolveToken, type Session, withAcl } from './auth';
 import { deployPrefab } from './prefab';
+// Guardian policy check for MCP write operations
+// Reads global policy from /agents/guardian, checks deny → escalate → allow
+type McpGuardianResult = { allowed: true } | { allowed: false; reason: string };
+
+async function checkMcpGuardian(store: Tree, toolName: string): Promise<McpGuardianResult> {
+  try {
+    const guardianNode = await store.get('/agents/guardian');
+    if (!guardianNode) return { allowed: false, reason: 'no Guardian configured at /agents/guardian — all writes denied' };
+
+    const policy = getComponent(guardianNode, AiPolicy);
+    if (!policy || policy.$type !== 'ai.policy') return { allowed: true };
+
+    const allow = (policy.allow as string[]) ?? [];
+    const deny = (policy.deny as string[]) ?? [];
+    const escalate = (policy.escalate as string[]) ?? [];
+
+    const matches = (patterns: string[], name: string) =>
+      patterns.some(p => {
+        if (p === name) return true;
+        if (!p.includes('*')) return false;
+        const re = new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+        return re.test(name);
+      });
+
+    if (matches(deny, toolName)) return { allowed: false, reason: `denied by Guardian: ${toolName}` };
+    if (matches(escalate, toolName)) return { allowed: false, reason: `requires approval — check /agents/approvals in Treenity dashboard` };
+    if (matches(allow, toolName)) return { allowed: true };
+
+    // Unknown tool via MCP → deny by default (safer than escalate for external callers)
+    return { allowed: false, reason: `not in Guardian allow list: ${toolName}. Use Treenity Agent Office for write operations.` };
+  } catch (err) {
+    console.error('[mcp-guardian] failed to check policy:', err);
+    return { allowed: false, reason: 'Guardian check failed — writes denied for safety' };
+  }
+}
 
 /** Compact YAML-like serializer — readable for LLMs, much less noisy than JSON */
 function yaml(val: unknown, depth = 0, maxStr = 300): string {
@@ -127,7 +164,7 @@ async function buildMcpServer(store: Tree, session: Session, claims?: string[]) 
   mcp.registerTool(
     'set_node',
     {
-      description: 'Create or update a node',
+      description: 'Create or update a node. May require Guardian approval.',
       inputSchema: {
         path: z.string(),
         type: z.string(),
@@ -137,6 +174,8 @@ async function buildMcpServer(store: Tree, session: Session, claims?: string[]) 
       },
     },
     async ({ path, type, components, acl, owner }) => {
+      const guard = await checkMcpGuardian(store, 'mcp__treenity__set_node');
+      if (!guard.allowed) return text(`🛑 Guardian: ${guard.reason}`);
       const existing = await aclStore.get(path);
       const node = existing ?? createNode(path, type);
       if (!existing) node.$type = type;
@@ -165,7 +204,7 @@ async function buildMcpServer(store: Tree, session: Session, claims?: string[]) 
   mcp.registerTool(
     'execute',
     {
-      description: 'Execute an action on a node or component. Actions are methods registered on types.',
+      description: 'Execute an action on a node or component. Actions are methods registered on types. May require Guardian approval.',
       inputSchema: {
         path: z.string(),
         action: z.string(),
@@ -175,6 +214,8 @@ async function buildMcpServer(store: Tree, session: Session, claims?: string[]) 
       },
     },
     async ({ path, action, type, key, data }) => {
+      const guard = await checkMcpGuardian(store, 'mcp__treenity__execute');
+      if (!guard.allowed) return text(`🛑 Guardian: ${guard.reason}`);
       const result = await executeAction(aclStore, path, type, key, action, data);
       return text(yaml(result ?? { ok: true }));
     },
@@ -191,6 +232,8 @@ async function buildMcpServer(store: Tree, session: Session, claims?: string[]) 
       },
     },
     async ({ source, target, allowAbsolute }) => {
+      const guard = await checkMcpGuardian(store, 'mcp__treenity__deploy_prefab');
+      if (!guard.allowed) return text(`🛑 Guardian: ${guard.reason}`);
       const result = await deployPrefab(aclStore, source, target, { allowAbsolute });
       return text(yaml(result));
     },
@@ -222,10 +265,12 @@ async function buildMcpServer(store: Tree, session: Session, claims?: string[]) 
   mcp.registerTool(
     'remove_node',
     {
-      description: 'Remove a node by path',
+      description: 'Remove a node by path. May be denied by Guardian.',
       inputSchema: { path: z.string() },
     },
     async ({ path }) => {
+      const guard = await checkMcpGuardian(store, 'mcp__treenity__remove_node');
+      if (!guard.allowed) return text(`🛑 Guardian: ${guard.reason}`);
       const ok = await aclStore.remove(path);
       return text(ok ? `removed: ${path}` : `not found: ${path}`);
     },

@@ -1,6 +1,6 @@
-import { type ComponentData, isRef, register, resolve } from '@treenity/core/core';
 import { useSchema } from '#schema-loader';
-import { createElement, useState } from 'react';
+import { type ComponentData, isRef, register, resolve } from '@treenity/core/core';
+import { createElement } from 'react';
 import { FieldLabel, RefEditor } from './FieldLabel';
 import { renderField, StringArrayField } from './form-field';
 
@@ -22,7 +22,7 @@ function DefaultEditForm({ value, onChange }: { value: ComponentData; onChange?:
   // Schema-driven form
   if (schema && Object.keys(schema.properties).length > 0) {
     return (
-      <div className="card-body">
+      <div className="py-0.5 pb-2.5">
         {Object.entries(schema.properties).map(([field, prop]) => {
           const p = prop as {
             type: string; title: string; format?: string; description?: string;
@@ -41,7 +41,7 @@ function DefaultEditForm({ value, onChange }: { value: ComponentData; onChange?:
   // Fallback: raw field rendering
   if (Object.keys(data).length > 0) {
     return (
-      <div className="card-body">
+      <div className="py-0.5 pb-2.5">
         {Object.entries(data).map(([k, v]) => {
           const onCh = (next: unknown) => setData((prev) => ({ ...prev, [k]: next }));
           if (v && typeof v === 'object' && isRef(v)) {

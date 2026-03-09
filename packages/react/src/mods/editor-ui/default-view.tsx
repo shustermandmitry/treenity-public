@@ -3,8 +3,8 @@ import { useChildren } from '#hooks';
 import { trpc } from '#trpc';
 import { type ComponentData, type NodeData, register } from '@treenity/core/core';
 import { useCallback, useState } from 'react';
-import { getComponents, getPlainFields, getSchema } from './node-utils';
 import { EmptyNodePlaceholder } from './empty-placeholder';
+import { getComponents, getPlainFields, getSchema } from './node-utils';
 
 /** Fallback for components without their own react handler */
 function ComponentFieldsView({ value }: { value: ComponentData }) {
@@ -46,7 +46,7 @@ function ComponentFieldsView({ value }: { value: ComponentData }) {
   );
 }
 
-function GenerateViewButton({ type, sample }: { type: string; sample: NodeData }) {
+export function GenerateViewButton({ type, sample, context, label }: { type: string; sample: NodeData; context?: string; label?: string }) {
   const [status, setStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
   const [error, setError] = useState('');
 
@@ -59,7 +59,7 @@ function GenerateViewButton({ type, sample }: { type: string; sample: NodeData }
       await trpc.execute.mutate({
         path: '/metatron',
         action: 'task',
-        data: { prompt: `Generate a React view for type "${type}". Sample data:\n${JSON.stringify(clean, null, 2)}` },
+        data: { prompt: `Generate a React view for type "${type}"${context ? ` in context "${context}"` : ''}. Sample data:\n${JSON.stringify(clean, null, 2)}` },
       });
       setStatus('done');
     } catch (err: any) {
@@ -83,7 +83,7 @@ function GenerateViewButton({ type, sample }: { type: string; sample: NodeData }
       onClick={generate}
       className="text-sm text-blue-400 hover:text-blue-300 border border-blue-400/30 rounded px-3 py-1.5 my-2"
     >
-      Generate AI View
+      {label ?? 'Generate AI View'}
     </button>
   );
 }

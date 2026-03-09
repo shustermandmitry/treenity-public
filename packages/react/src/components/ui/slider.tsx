@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '#lib/utils';
+import { cn } from '#components/lib/utils';
 import { Slider as SliderPrimitive } from 'radix-ui';
 import * as React from 'react';
 

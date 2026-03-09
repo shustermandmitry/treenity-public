@@ -1,5 +1,5 @@
 // Adaptive form field — label left when content is short, label on top when tall
-import { cn } from '#lib/utils';
+import { cn } from '#components/lib/utils';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 const STACK_THRESHOLD = 48; // px — above this, label goes on top

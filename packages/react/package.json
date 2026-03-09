@@ -24,13 +24,44 @@
     "ai-native"
   ],
   "imports": {
-    "#*": { "development": ["./src/*.ts", "./src/*.tsx"], "default": ["./dist/*.js", "./dist/*.jsx"] }
+    "#*": {
+      "development": [
+        "./src/*.ts",
+        "./src/*.tsx"
+      ],
+      "default": [
+        "./dist/*.js",
+        "./dist/*.jsx"
+      ]
+    }
   },
   "exports": {
-    ".":      { "development": "./src/index.ts", "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./ui/*": { "development": ["./src/components/ui/*.ts", "./src/components/ui/*.tsx"], "types": "./dist/components/ui/*.d.ts", "default": "./dist/components/ui/*.js" },
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ui/*": {
+      "development": [
+        "./src/components/ui/*.ts",
+        "./src/components/ui/*.tsx"
+      ],
+      "types": "./dist/components/ui/*.d.ts",
+      "default": "./dist/components/ui/*.js"
+    },
     "./*.css": "./src/*.css",
-    "./*":    { "development": ["./src/*.ts", "./src/*.tsx"], "types": ["./dist/*.d.ts"], "default": ["./dist/*.js"] }
+    "./*": {
+      "development": [
+        "./src/*.ts",
+        "./src/*.tsx"
+      ],
+      "types": [
+        "./dist/*.d.ts"
+      ],
+      "default": [
+        "./dist/*.js"
+      ]
+    }
   },
   "treenity": {
     "clients": "./src/mods/clients.ts",
@@ -90,6 +121,7 @@
     "radix-ui": "^1.4.3",
     "react-easy-crop": "^5.5.6",
     "react-grid-layout": "^2.2.2",
+    "react-resizable-panels": "^4.7.2",
     "sonner": "^2.0.7",
     "swiper": "^12.1.2",
     "tailwind-merge": "^3.4.0",

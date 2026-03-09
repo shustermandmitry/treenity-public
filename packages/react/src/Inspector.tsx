@@ -1,7 +1,13 @@
 // Inspector — view + edit panel for selected node (Unity-style inspector)
 // Shell only: delegates rendering to registered views, provides generic edit UI
 
+import { PathBreadcrumb } from '#components/PathBreadcrumb';
+import { Badge } from '#components/ui/badge';
+import { Button } from '#components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '#components/ui/tabs';
 import { NodeProvider, Render, RenderContext } from '#context';
+import { toPlain } from '#lib/to-plain';
+import { FieldLabel, RefEditor } from '#mods/editor-ui/FieldLabel';
 import {
   getActions,
   getActionSchema,
@@ -11,17 +17,15 @@ import {
   getViewContexts,
   pickDefaultContext,
 } from '#mods/editor-ui/node-utils';
-import { type ComponentData, type GroupPerm, type NodeData, isRef, resolve } from '@treenity/core/core';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { type ComponentData, type GroupPerm, isRef, type NodeData, resolve } from '@treenity/core/core';
 import type { TypeSchema } from '@treenity/core/schema/types';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { proxy, snapshot, useSnapshot } from 'valtio';
-import { toPlain } from '#lib/to-plain';
 import { AclEditor } from './AclEditor';
 import * as cache from './cache';
 import { ErrorBoundary } from './ErrorBoundary';
 import { set, usePath } from './hooks';
-import { FieldLabel, RefEditor } from '#mods/editor-ui/FieldLabel';
 import { useSchema } from './schema-loader';
 import { trpc } from './trpc';
 
@@ -62,32 +66,6 @@ type Props = {
   toast: (msg: string) => void;
 };
 
-// Breadcrumb from path
-function Breadcrumb({ path, onSelect }: { path: string; onSelect: (p: string) => void }) {
-  if (path === '/')
-    return (
-      <div className="editor-breadcrumb">
-        <span>/</span>
-      </div>
-    );
-  const parts = path.split('/').filter(Boolean);
-  const crumbs: { label: string; path: string }[] = [{ label: '/', path: '/' }];
-  let cur = '';
-  for (const p of parts) {
-    cur += '/' + p;
-    crumbs.push({ label: p, path: cur });
-  }
-  return (
-    <div className="editor-breadcrumb">
-      {crumbs.map((c, i) => (
-        <span key={c.path}>
-          {i > 0 && <span className="sep">/</span>}
-          <span onClick={() => onSelect(c.path)}>{c.label === '/' ? 'root' : c.label}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
 
 // Pretty-print action result value
 function ResultView({ value }: { value: unknown }) {
@@ -178,12 +156,14 @@ function ActionCardList({
   }
 
   return (
-    <div className="action-pills">
+    <div className="mt-2.5 pt-2.5 border-t border-border">
       <div className="flex flex-wrap gap-1.5">
         {actions.map((a) => (
-          <button
+          <Button
             key={a}
-            className={`action-pill${expanded === a ? ' active' : ''}${running === a ? ' running' : ''}`}
+            variant="outline"
+            size="sm"
+            className={`h-6 rounded-full font-mono text-[11px] text-green-400 border-green-400/30 hover:bg-green-400/10 hover:border-green-400/50 ${expanded === a ? 'bg-green-400/15 border-green-400' : ''} ${running === a ? 'opacity-60 pointer-events-none' : ''}`}
             onClick={() => setExpanded(expanded === a ? null : a)}
           >
             {running === a ? '...' : a}
@@ -193,7 +173,7 @@ function ActionCardList({
             {results[a]?.ok && expanded !== a && (
               <span className="ml-1 text-primary/60">✓</span>
             )}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -206,7 +186,7 @@ function ActionCardList({
         const mode = resultMode[a] ?? 'pretty';
 
         return (
-          <div className="action-detail">
+          <div className="mt-2 p-2 px-2.5 border border-border rounded-md bg-card">
             {/* Params section */}
             {hasParams && (
               <div className="flex flex-col gap-1.5 mb-2">
@@ -219,7 +199,7 @@ function ActionCardList({
                       [a]: { ...(prev[a] ?? {}), [field]: v },
                     }));
                   return (
-                    <div key={field} className="action-detail-field">
+                    <div key={field} className="flex flex-col gap-0.5">
                       <label>{p.title ?? field}</label>
                       {p.type === 'number' || p.format === 'number' ? (
                         <input type="number" value={String(val ?? 0)}
@@ -243,7 +223,7 @@ function ActionCardList({
             {/* Free-form JSON params for untyped actions */}
             {!hasParams && !noParams && (
               <textarea
-                className="action-params-input mb-2"
+                className="min-h-12 text-[11px] mb-2"
                 value={paramsText[a] ?? '{}'}
                 onChange={(e) => setParamsText((prev) => ({ ...prev, [a]: e.target.value }))}
                 spellCheck={false}
@@ -252,17 +232,18 @@ function ActionCardList({
             )}
 
             {/* Run button */}
-            <button
-              className="action-run-btn"
+            <Button
+              size="sm"
+              className="h-6 rounded-full text-[11px] font-medium"
               disabled={running !== null}
               onClick={() => run(a)}
             >
               {running === a ? '...' : '▶'} {a}
-            </button>
+            </Button>
 
             {/* Result */}
             {result && (
-              <div className={`action-result-box${result.ok ? '' : ' error'}`}>
+              <div className={`mt-2 p-1.5 px-2 rounded-md bg-background border ${result.ok ? 'border-border' : 'border-destructive/40 bg-destructive/5'}`}>
                 {!result.ok ? (
                   <span className="text-destructive font-mono text-[11px]">{String(result.value)}</span>
                 ) : result.value === undefined || result.value === null ? (
@@ -273,14 +254,18 @@ function ActionCardList({
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Result</span>
                       {typeof result.value === 'object' && (
                         <div className="flex gap-0.5">
-                          <button
-                            className={`action-mode-btn${mode === 'pretty' ? ' active' : ''}`}
+                          <Button
+                            variant={mode === 'pretty' ? 'secondary' : 'ghost'}
+                            size="sm"
+                            className="h-5 px-1.5 text-[10px] rounded-full"
                             onClick={() => setResultMode((p) => ({ ...p, [a]: 'pretty' }))}
-                          >View</button>
-                          <button
-                            className={`action-mode-btn${mode === 'json' ? ' active' : ''}`}
+                          >View</Button>
+                          <Button
+                            variant={mode === 'json' ? 'secondary' : 'ghost'}
+                            size="sm"
+                            className="h-5 px-1.5 text-[10px] rounded-full"
                             onClick={() => setResultMode((p) => ({ ...p, [a]: 'json' }))}
-                          >JSON</button>
+                          >JSON</Button>
                         </div>
                       )}
                     </div>
@@ -315,9 +300,9 @@ function NodeCard({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="card">
+    <div className="border-t border-border mt-2 pt-0.5 first:border-t-0 first:mt-0 first:pt-0">
       <div
-        className="card-header cursor-pointer select-none"
+        className="flex items-center justify-between py-2 pb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none"
         onClick={() => setOpen((v) => !v)}
       >
         <span>Node</span>
@@ -328,7 +313,7 @@ function NodeCard({
         </span>
       </div>
       {open && (
-        <div className="card-body">
+        <div className="py-0.5 pb-2.5">
           <div className="field">
             <label>$path</label>
             <input value={path} readOnly />
@@ -422,9 +407,9 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
 
   if (!node) {
     return (
-      <div className="editor">
-        <div className="editor-empty">
-          <div className="icon">&#9741;</div>
+      <div className="flex flex-1 flex-col overflow-hidden bg-background">
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground/40">
+          <div className="text-[32px] opacity-30">&#9741;</div>
           <p>Select a node to inspect</p>
         </div>
       </div>
@@ -505,53 +490,53 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
   return (
     <div className="editor">
       {/* Header */}
-      <div className="editor-header">
-        <Breadcrumb path={node.$path} onSelect={onSelect} />
-        <div className="editor-title">
+      <div className="px-6 pt-4 pb-3 border-b border-border bg-card shrink-0">
+        <PathBreadcrumb path={node.$path} onSelect={onSelect} />
+        <div className="flex items-center gap-2.5 flex-wrap">
           <h2>{nodeName}</h2>
-          <span className="editor-type-badge">{node.$type}</span>
+          <Badge variant="outline" className="font-mono text-[10px]">{node.$type}</Badge>
           <a
             href={node.$path}
             target="_blank"
             rel="noopener"
-            className="text-[11px] text-[--text-3] hover:text-[--accent] no-underline"
+            className="text-[11px] text-muted-foreground hover:text-primary no-underline"
           >
             View &#8599;
           </a>
           {onSetRoot && (
-            <button
-              className="sm ghost text-[11px]"
-              onClick={() => onSetRoot(node.$path)}
-              title="Focus subtree"
-            >
+            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px]" onClick={() => onSetRoot(node.$path)} title="Focus subtree">
               &#8962;
-            </button>
+            </Button>
           )}
           {viewContexts.length > 1 && (
-            <span className="context-buttons">
+            <span className="flex gap-0.5">
               {viewContexts.map((c) => (
-                <button
+                <Button
                   key={c}
-                  className={`sm context-btn${snap.context === c ? ' active' : ''}`}
+                  variant={snap.context === c ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-6 px-2 text-[11px]"
                   onClick={() => { st.context = c; }}
                 >
                   {c.replace('react:', '')}
-                </button>
+                </Button>
               ))}
             </span>
           )}
-          <span className="spacer" />
-          <button className={snap.editing ? 'sm' : 'sm primary'} onClick={() => { st.editing = !st.editing; }}>
+          <span className="flex-1" />
+          <Button variant={snap.editing ? 'ghost' : 'default'} size="sm" className="h-7" onClick={() => { st.editing = !st.editing; }}>
             {snap.editing ? 'Close' : 'Edit'}
-          </button>
-          <button
-            className="sm danger"
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-7"
             onClick={() => {
               if (confirm(`Delete ${node.$path}?`)) onDelete(node.$path);
             }}
           >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -570,28 +555,20 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
       <div className={`edit-panel${snap.editing ? ' open' : ''}`}>
         <div className="edit-panel-header">
           <span>Edit {nodeName}</span>
-          <button className="sm ghost" onClick={() => { st.editing = false; }}>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { st.editing = false; }}>
             &#10005;
-          </button>
+          </Button>
         </div>
 
-        <div className="edit-panel-tabs">
-          <button
-            className={`editor-tab${snap.tab === 'properties' ? ' active' : ''}`}
-            onClick={() => { st.tab = 'properties'; }}
-          >
-            Properties
-          </button>
-          <button
-            className={`editor-tab${snap.tab === 'json' ? ' active' : ''}`}
-            onClick={() => {
-              st.tab = 'json';
-              st.jsonText = JSON.stringify({ ...node, ...st.plainData }, null, 2);
-            }}
-          >
-            JSON
-          </button>
-        </div>
+        <Tabs value={snap.tab} onValueChange={(v) => {
+          st.tab = v as 'properties' | 'json';
+          if (v === 'json') st.jsonText = JSON.stringify({ ...node, ...st.plainData }, null, 2);
+        }} className="px-3 pt-2">
+          <TabsList className="h-8 bg-secondary">
+            <TabsTrigger value="properties" className="text-xs">Properties</TabsTrigger>
+            <TabsTrigger value="json" className="text-xs">JSON</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         <div className="edit-panel-body">
           {snap.tab === 'properties' ? (
@@ -607,8 +584,8 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
                 }}
               />
 
-              <div className="card">
-                <div className="card-header">{node.$type}</div>
+              <div className="border-t border-border mt-2 pt-0.5 first:border-t-0 first:mt-0 first:pt-0">
+                <div className="flex items-center justify-between py-2 pb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{node.$type}</div>
                   <ErrorBoundary>
                     <EditPanel node={node} type={node.$type} data={snap.plainData as Record<string, unknown>} onData={(d) => { st.plainData = d; st.dirty = true; }} />
                     <ActionCardList
@@ -623,17 +600,19 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
                 </div>
 
               {components.map(([name, comp]) => (
-                <div key={name} className="card">
-                  <div className="card-header cursor-pointer select-none" onClick={() => toggleCollapse(name)}>
+                <div key={name} className="border-t border-border mt-2 pt-0.5 first:border-t-0 first:mt-0 first:pt-0">
+                  <div className="flex items-center justify-between py-2 pb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none" onClick={() => toggleCollapse(name)}>
                     <span className="font-mono text-[12px]">{name}</span>
                     <span className="flex items-center gap-2">
-                      <span className="component-type">{(comp as ComponentData).$type}</span>
-                      <button
-                        className="sm danger"
+                      <span className="text-[11px] text-muted-foreground/50 font-mono">{(comp as ComponentData).$type}</span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-6 text-xs"
                         onClick={(e) => { e.stopPropagation(); handleRemoveComponent(name); }}
                       >
                         Remove
-                      </button>
+                      </Button>
                     </span>
                   </div>
                   {!snap.collapsed[name] && (
@@ -658,9 +637,9 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
               ))}
 
               {!schema && !mainCompDefaults && Object.keys(snap.plainData).length > 0 && (
-                <div className="card">
-                  <div className="card-header">Data</div>
-                  <div className="card-body">
+                <div className="border-t border-border mt-2 pt-0.5 first:border-t-0 first:mt-0 first:pt-0">
+                  <div className="flex items-center justify-between py-2 pb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Data</div>
+                  <div className="py-0.5 pb-2.5">
                     {Object.entries(snap.plainData).map(([k, v]) => {
                       const onCh = (next: unknown) => { st.plainData[k] = next; st.dirty = true; };
                       return (
@@ -682,7 +661,7 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
               )}
             </>
           ) : (
-            <div className="json-view">
+            <div className="relative bg-background border border-border rounded-md overflow-hidden">
               <textarea
                 value={snap.jsonText}
                 onChange={(e) => { st.jsonText = e.target.value; st.dirty = true; }}
@@ -694,15 +673,15 @@ export function Inspector({ path, currentUserId, onDelete, onAddComponent, onSel
 
         <div className="edit-panel-actions">
           {snap.stale && (
-            <button className="ghost" onClick={handleReset} title="Node updated externally">
+            <Button variant="ghost" size="sm" onClick={handleReset} title="Node updated externally">
               Reset
-            </button>
+            </Button>
           )}
-          <button className="primary" onClick={handleSave}>
+          <Button size="sm" onClick={handleSave}>
             Save
-          </button>
+          </Button>
           {snap.tab === 'properties' && (
-            <button onClick={handleAdd}>+ Component</button>
+            <Button variant="outline" size="sm" onClick={handleAdd}>+ Component</Button>
           )}
         </div>
       </div>

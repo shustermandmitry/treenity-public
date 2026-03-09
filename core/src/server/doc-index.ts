@@ -116,23 +116,24 @@ function collectFiles(projectRoot: string, memoryDir?: string): string[] {
     for (const f of walkDir(memoryDir, new Set(['.md']))) files.add(f);
   }
 
-  // Core layers: full source
-  for (const d of ['src/core', 'src/store', 'src/comp', 'src/server']) {
+  // Core layers: full source (engine/core/src/*)
+  for (const d of ['engine/core/src/core', 'engine/core/src/tree', 'engine/core/src/comp', 'engine/core/src/server', 'engine/core/src/schema', 'engine/core/src/client']) {
     for (const f of walkDir(join(projectRoot, d), new Set(['.ts']), /\.test\.ts$/)) files.add(f);
   }
 
-  // Mods: types.ts, service.ts, client.ts, CLAUDE.md (CLAUDE.md already caught above)
-  for (const f of walkDir(join(projectRoot, 'src/mods'), new Set(['.ts']), /\.test\.ts$/)) {
-    const name = basename(f);
-    if (['types.ts', 'service.ts', 'client.ts', 'server.ts', 'mcp.ts', 'view.tsx'].includes(name)) files.add(f);
-  }
-  // Also include .tsx views from mods
-  for (const f of walkDir(join(projectRoot, 'src/mods'), new Set(['.tsx']), /\.test\.tsx$/)) {
-    files.add(f);
+  // Mods: types.ts, service.ts, etc. — engine/core/src/mods, engine/mods/*, mods/*
+  const modKeyFiles = new Set(['types.ts', 'service.ts', 'client.ts', 'server.ts', 'mcp.ts', 'view.tsx']);
+  for (const modDir of ['engine/core/src/mods', 'engine/mods', 'mods']) {
+    for (const f of walkDir(join(projectRoot, modDir), new Set(['.ts']), /\.test\.ts$/)) {
+      if (modKeyFiles.has(basename(f))) files.add(f);
+    }
+    for (const f of walkDir(join(projectRoot, modDir), new Set(['.tsx']), /\.test\.tsx$/)) {
+      files.add(f);
+    }
   }
 
-  // Frontend key files
-  for (const f of ['src/front/App.tsx', 'src/front/hooks.ts', 'src/front/cache.ts', 'src/front/trpc.ts', 'src/front/Inspector.tsx']) {
+  // Frontend key files (engine/packages/react/src/*)
+  for (const f of ['engine/packages/react/src/App.tsx', 'engine/packages/react/src/hooks.ts', 'engine/packages/react/src/cache.ts', 'engine/packages/react/src/trpc.ts']) {
     const full = join(projectRoot, f);
     if (existsSync(full)) files.add(full);
   }

@@ -1,103 +1,23 @@
+import { Button } from '#components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '#components/ui/dropdown-menu';
+import { Input } from '#components/ui/input';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '#components/ui/resizable';
+import { TypePicker } from '#mods/editor-ui/type-picker';
 import type { NodeData } from '@treenity/core/core';
-import { applyPatch, type Operation } from 'fast-json-patch';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import * as cache from './cache';
 import { tree } from './client';
+import { startEvents, stopEvents } from './events';
 import { NavigateProvider } from './hooks';
 import { Inspector } from './Inspector';
-import { TypePicker } from '#mods/editor-ui/type-picker';
+import { LoginModal, LoginScreen } from './Login';
 import { Tree } from './Tree';
 import { AUTH_EXPIRED_EVENT, clearToken, getToken, setToken, trpc } from './trpc';
 import { ViewPage } from './ViewPage';
 
 // Hydrate from IDB before first render — fires bump() when done → reactive re-render
 cache.hydrate();
-
-function LoginForm({ onLogin }: { onLogin: (userId: string) => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [userId, setUserId] = useState('');
-  const [password, setPassword] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!userId.trim() || !password) return;
-    setLoading(true);
-    setErr(null);
-    try {
-      const fn = mode === 'register' ? trpc.register : trpc.login;
-      const res = await fn.mutate({ userId: userId.trim(), password });
-      setToken(res.token);
-      onLogin(res.userId);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <form className="login-box" onSubmit={handleSubmit}>
-      <div className="login-logo">
-        <img src="/treenity.svg" alt="" width="32" height="32" />
-        Treenity
-      </div>
-      <div className="field">
-        <label>User ID</label>
-        <input
-          autoFocus
-          placeholder="Enter your user ID"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label>Password</label>
-        <input
-          type="password"
-          placeholder="Enter password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </div>
-      {err && <div className="login-error">{err}</div>}
-      <button className="primary" type="submit" disabled={loading || !userId.trim() || !password}>
-        {loading ? '...' : mode === 'register' ? 'Create account' : 'Sign in'}
-      </button>
-      <button
-        type="button"
-        className="ghost"
-        onClick={() => {
-          setMode((m) => (m === 'login' ? 'register' : 'login'));
-          setErr(null);
-        }}
-      >
-        {mode === 'login' ? 'No account? Register' : 'Have an account? Sign in'}
-      </button>
-    </form>
-  );
-}
-
-function LoginScreen({ onLogin }: { onLogin: (userId: string) => void }) {
-  return (
-    <div className="login-screen">
-      <LoginForm onLogin={onLogin} />
-    </div>
-  );
-}
-
-function LoginModal({ onLogin, onClose }: { onLogin: (userId: string) => void; onClose?: () => void }) {
-  return (
-    <div className="login-overlay" onMouseDown={(e) => { if (onClose && e.target === e.currentTarget) onClose(); }}>
-      <div className="login-modal">
-        {onClose && <button className="login-modal-close" onClick={onClose}>&times;</button>}
-        <LoginForm onLogin={onLogin} />
-      </div>
-    </div>
-  );
-}
 
 // Isolated component — global subscription re-renders only this, not the entire App
 function NodeCount() {
@@ -306,60 +226,15 @@ export function App() {
     })();
   }, [authed, loadChildren, root, mode]);
 
-  // Live subscription — server push → cache
+  // Server event subscription — module-level, refs provide stable access to current state
   useEffect(() => {
     if (!authed) return;
-    const sub = trpc.events.subscribe(undefined as void, {
-      onData(event) {
-        if (event.type === 'reconnect') {
-          if (!event.preserved) {
-            // Watches lost — force useChildren hooks to re-fetch and re-register
-            cache.signalReconnect();
-            // Re-register tree watches for expanded paths (editor mode)
-            for (const path of expandedRef.current) loadChildren(path);
-            // Re-watch the currently selected node
-            if (selectedRef.current) {
-              trpc.get.query({ path: selectedRef.current, watch: true }).then(n => {
-                if (n) cache.put(n as NodeData);
-              });
-            }
-          }
-          return;
-        }
-        if (event.type === 'set') {
-          cache.put({ $path: event.path, ...event.node } as NodeData);
-          if (event.addVps) event.addVps.forEach((vp: string) => cache.addToParent(event.path, vp));
-          if (event.rmVps) event.rmVps.forEach((vp: string) => cache.removeFromParent(event.path, vp));
-        } else if (event.type === 'patch') {
-          const existing = cache.get(event.path);
-          if (existing && event.patches) {
-            try {
-              const { newDocument } = applyPatch(structuredClone(existing), event.patches as Operation[]);
-              cache.put(newDocument as NodeData);
-            } catch (e) {
-              console.error('Failed to apply patches, fetching full node:', e);
-              trpc.get.query({ path: event.path }).then((n) => {
-                if (n) cache.put(n as NodeData);
-              });
-            }
-          } else {
-            trpc.get.query({ path: event.path }).then((n) => {
-              if (n) cache.put(n as NodeData);
-            });
-          }
-          if (event.addVps) event.addVps.forEach((vp: string) => cache.addToParent(event.path, vp));
-          if (event.rmVps) event.rmVps.forEach((vp: string) => cache.removeFromParent(event.path, vp));
-        } else if (event.type === 'remove') {
-          // Try to remove from anywhere
-          if (event.rmVps && event.rmVps.length > 0) {
-            event.rmVps.forEach((vp: string) => cache.removeFromParent(event.path, vp));
-          } else {
-            cache.remove(event.path);
-          }
-        }
-      },
+    startEvents({
+      loadChildren,
+      getExpanded: () => expandedRef.current,
+      getSelected: () => selectedRef.current,
     });
-    return () => sub.unsubscribe();
+    return stopEvents;
   }, [authed, loadChildren]);
 
   const handleSelect = useCallback(
@@ -486,9 +361,7 @@ export function App() {
   }, []);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   // Re-auth as anon + show login modal when session expires mid-use
   useEffect(() => {
@@ -508,19 +381,8 @@ export function App() {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
   }, [showLoginModal]);
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as HTMLElement)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [menuOpen]);
-
   const handleLogout = async () => {
     clearToken();
-    setMenuOpen(false);
     const { token, userId } = await trpc.anonLogin.mutate();
     setToken(token);
     setAuthed(userId);
@@ -529,7 +391,6 @@ export function App() {
 
   const handleClearCache = () => {
     cache.clear();
-    setMenuOpen(false);
     showToast('Cache cleared');
     location.reload();
   };
@@ -558,13 +419,11 @@ export function App() {
 
   if (error) {
     return (
-      <div className="app">
-        <div className="editor">
-          <div className="editor-empty">
-            <div className="icon">&#9888;</div>
-            <p className="text-[--danger]">{error}</p>
-            <button onClick={() => location.reload()}>Retry</button>
-          </div>
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <span className="text-4xl">&#9888;</span>
+          <p className="text-sm text-red-400">{error}</p>
+          <Button variant="outline" size="sm" onClick={() => location.reload()}>Retry</Button>
         </div>
       </div>
     );
@@ -572,95 +431,106 @@ export function App() {
 
   return (
     <NavigateProvider value={navigate}>
-    <div className="app">
-      <div className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
-        <div className="sidebar-header">
-          <span className="logo">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+      <ResizablePanelGroup direction="horizontal" className="h-full">
+        <ResizablePanel
+          defaultSize={28}
+          minSize={150}
+          maxSize={450}
+          className="flex flex-col border-r border-border"
+        >
+          {/* Header */}
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/50 shrink-0">
             <img src="/treenity.svg" alt="" width="20" height="20" />
-            {!sidebarCollapsed && 'Treenity'}
-          </span>
-          {!sidebarCollapsed && root !== '/' && (
-            <button
-              className="sm ghost font-mono text-[11px]"
-              onClick={() => setRoot('/')}
-              title="Back to global root"
-            >
-              &#8962; {root}
-            </button>
-          )}
-          {!sidebarCollapsed && roots.length === 0 && (
-            <button className="sm" onClick={handleCreateRoot}>
-              Create root
-            </button>
-          )}
-          <button
-            className="sm ghost sidebar-collapse-btn"
-            onClick={() => setSidebarCollapsed(v => !v)}
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {sidebarCollapsed ? '\u25B6' : '\u25C0'}
-          </button>
-        </div>
-        <div className="sidebar-search">
-          <input
-            ref={searchRef}
-            placeholder="Search nodes..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <button
-            className="sidebar-search-toggle"
-            data-active={showHidden || undefined}
-            onClick={() => setShowHidden(v => !v)}
-            title={showHidden ? 'Hide _ prefixed nodes' : 'Show _ prefixed nodes'}
-          >
-            _
-          </button>
-        </div>
-        <div className="sidebar-tree">
-          <Tree
-            roots={roots}
-            expanded={expanded}
-            loaded={loaded}
-            selected={selected}
-            filter={filter}
-            showHidden={showHidden}
-            onSelect={handleSelect}
-            onExpand={handleExpand}
-            onCreateChild={handleCreateChild}
-            onDelete={handleDelete}
-            onMove={handleMove}
-          />
-        </div>
-        <div className="sidebar-footer" ref={menuRef}>
-          <span>
-            {authed?.startsWith('anon:') ? `anon:${authed.slice(5, 13)}` : authed} &middot; <NodeCount /> nodes
-          </span>
-          <button className="sm ghost" onClick={() => setMenuOpen(v => !v)}>
-            &#9776;
-          </button>
-          {menuOpen && (
-            <div className="sidebar-menu">
-              <button onClick={handleLogout}>
-                {authed?.startsWith('anon:') ? 'Login' : 'Logout'}
-              </button>
-              <button onClick={handleClearCache}>
-                Clear cache
-              </button>
+            {!sidebarCollapsed && <span className="text-sm font-semibold tracking-tight">Treenity</span>}
+            {!sidebarCollapsed && root !== '/' && (
+              <Button variant="ghost" size="sm" className="h-5 px-1.5 font-mono text-[10px] text-muted-foreground" onClick={() => setRoot('/')}>
+                &#8962; {root}
+              </Button>
+            )}
+            {!sidebarCollapsed && roots.length === 0 && (
+              <Button variant="ghost" size="sm" className="h-5 text-[10px]" onClick={handleCreateRoot}>
+                Create root
+              </Button>
+            )}
+          </div>
+
+          {/* Search */}
+          {!sidebarCollapsed && (
+            <div className="flex items-center gap-1 px-2 py-1.5 shrink-0">
+              <Input
+                ref={searchRef}
+                placeholder="Search nodes..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="h-7 text-xs bg-muted/50 border-border"
+              />
+              <Button
+                variant={showHidden ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 w-7 p-0 text-xs text-muted-foreground shrink-0"
+                onClick={() => setShowHidden(v => !v)}
+                title={showHidden ? 'Hide _ prefixed nodes' : 'Show _ prefixed nodes'}
+              >
+                _
+              </Button>
             </div>
           )}
-        </div>
-      </div>
 
-      <Inspector
-        path={selected}
-        currentUserId={authed ?? undefined}
-        onDelete={handleDelete}
-        onAddComponent={handleAddComponent}
-        onSelect={handleSelect}
-        onSetRoot={handleSetRoot}
-        toast={showToast}
-      />
+          {/* Tree */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            <Tree
+              roots={roots}
+              expanded={expanded}
+              loaded={loaded}
+              selected={selected}
+              filter={filter}
+              showHidden={showHidden}
+              onSelect={handleSelect}
+              onExpand={handleExpand}
+              onCreateChild={handleCreateChild}
+              onDelete={handleDelete}
+              onMove={handleMove}
+            />
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/50 text-[11px] text-muted-foreground shrink-0">
+            <span className="truncate">
+              {authed?.startsWith('anon:') ? `anon:${authed.slice(5, 13)}` : authed} &middot; <NodeCount /> nodes
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground">
+                  &#9776;
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-36">
+                <DropdownMenuItem onClick={handleLogout}>
+                  {authed?.startsWith('anon:') ? 'Login' : 'Logout'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleClearCache}>
+                  Clear cache
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={72} minSize={40}>
+          <Inspector
+            path={selected}
+            currentUserId={authed ?? undefined}
+            onDelete={handleDelete}
+            onAddComponent={handleAddComponent}
+            onSelect={handleSelect}
+            onSetRoot={handleSetRoot}
+            toast={showToast}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {creatingAt && <TypePicker onSelect={handlePickType} onCancel={() => setCreatingAt(null)} />}
 
@@ -682,7 +552,11 @@ export function App() {
         />
       )}
 
-      {toastMsg && <div className={`toast ${toastMsg.type === 'error' ? 'toast-error' : ''}`}>{toastMsg.text}</div>}
+      {toastMsg && (
+        <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg text-sm ${toastMsg.type === 'error' ? 'bg-destructive/20 text-destructive border border-destructive/30' : 'bg-primary/20 text-primary border border-primary/30'}`}>
+          {toastMsg.text}
+        </div>
+      )}
     </div>
     </NavigateProvider>
   );

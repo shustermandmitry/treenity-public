@@ -1,29 +1,110 @@
-// Launcher view — iPhone-like home screen with react-grid-layout
+// Launcher view — dashboard with drag-drop from tree + context switching
 
-import { type NodeData, isRef, register } from '@treenity/core/core';
-import { Render, RenderContext } from '@treenity/react/context';
-import { execute, useChildren, useNavigate, usePath } from '@treenity/react/hooks';
+import { isRef, type NodeData, register, resolveExact } from '@treenity/core/core';
+import { Render, RenderContext, type View } from '@treenity/react/context';
+import { useChildren, useNavigate, usePath } from '@treenity/react/hooks';
 import { cn } from '@treenity/react/lib/utils';
+import { GenerateViewButton } from '@treenity/react/mods/editor-ui/default-view';
 import { Button } from '@treenity/react/ui/button';
-import { Input } from '@treenity/react/ui/input';
-import { Plus, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type MouseEventHandler } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@treenity/react/ui/dropdown-menu';
+import { GripVertical, Plus, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import GridLayout from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import { Launcher } from './types';
 
-type LayoutItem = { i: string; x: number; y: number; w: number; h: number };
+type LauncherLayoutItem = { i: string; x: number; y: number; w: number; h: number; ctx?: string };
 
-// ── App icon — resolves ref target and renders via react:icon ──
+// Available rendering contexts for the selector
+const CONTEXTS = ['auto', 'react', 'react:icon', 'react:widget', 'react:compact'] as const;
 
-function AppIcon({
+function contextLabel(ctx: string) {
+  if (ctx === 'auto') return 'Auto';
+  if (ctx === 'react') return 'Full';
+  if (ctx === 'react:icon') return 'Icon';
+  if (ctx === 'react:widget') return 'Widget';
+  if (ctx === 'react:compact') return 'Compact';
+  return ctx;
+}
+
+// Resolve which context to render based on layout item
+function resolveContext(item: LauncherLayoutItem): string {
+  if (item.ctx && item.ctx !== 'auto') return item.ctx;
+  return item.w > 1 || item.h > 1 ? 'react:widget' : 'react:icon';
+}
+
+// ── Edit overlay — close + context dropdown menu ──
+
+function EditOverlay({
+  ctx,
+  onRemove,
+  onContextChange,
+}: {
+  ctx: string;
+  onRemove: () => void;
+  onContextChange: (ctx: string) => void;
+}) {
+  return (
+    <>
+      <button
+        className="launcher-btn absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-red-700 shadow-lg p-0"
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <X className="h-3 w-3 text-white" />
+      </button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="launcher-btn absolute -left-1 -top-1 z-10 flex h-auto min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 shadow-lg text-[9px] font-medium text-white"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {contextLabel(ctx)}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-24">
+          {CONTEXTS.map((c) => (
+            <DropdownMenuItem
+              key={c}
+              className={cn('text-xs', c === ctx && 'font-bold')}
+              onSelect={() => onContextChange(c)}
+            >
+              {contextLabel(c)}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+}
+
+// Stored ctx or 'auto' if none
+function getStoredCtx(item: LauncherLayoutItem): string {
+  return item.ctx || 'auto';
+}
+
+// ── App item — resolves ref target and renders via context ──
+
+function AppItem({
   refNode,
+  context,
+  stored,
   editing,
   onRemove,
+  onContextChange,
 }: {
   refNode: NodeData;
+  context: string;
+  stored: string;
   editing?: boolean;
   onRemove?: () => void;
+  onContextChange?: (ctx: string) => void;
 }) {
   const targetPath = isRef(refNode) ? refNode.$ref : null;
   const target = usePath(targetPath) as NodeData | undefined;
@@ -38,136 +119,74 @@ function AppIcon({
   }
 
   const label = target.$path.split('/').at(-1) || '?';
+  const hasView = !!resolveExact(target.$type, context as 'react');
 
-  return (
-    <div
-      className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1"
-      onClick={() => !editing && navigate(target.$path)}
-    >
-      <div className="relative h-14 w-14 shrink-0">
-        <RenderContext name="react:icon">
-          <Render value={target} />
-        </RenderContext>
-        {editing && onRemove && (
-          <WidgetCloseButton
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-          />
-        )}
-      </div>
-      <span className="max-w-16 truncate text-center text-[11px] font-medium text-white/90 drop-shadow-sm">
-        {label}
-      </span>
-    </div>
-  );
-}
+  // No view registered for this context — offer AI generation
+  const renderContent = hasView
+    ? <RenderContext name={context}><Render value={target} /></RenderContext>
+    : <GenerateViewButton type={target.$type} sample={target} context={context} label="Make AI" />;
 
-// ── Widget card — renders target via react:widget or react fallback ──
-
-function WidgetCloseButton({
-  onClick,
-}: {
-  onClick: (e: MouseEventHandler<HTMLButtonElement>) => void;
-}) {
-  return <button
-    className="absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-red-700 shadow-l p-0"
-    onClick={onClick}
-  >
-    <X className="h-3 w-3 text-white" />
-  </button>;
-}
-
-function WidgetCard({
-  refNode,
-  editing,
-  onRemove,
-}: {
-  refNode: NodeData;
-  editing?: boolean;
-  onRemove?: () => void;
-}) {
-  const targetPath = isRef(refNode) ? refNode.$ref : null;
-  const target = usePath(targetPath) as NodeData | undefined;
-  const navigate = useNavigate();
-
-  if (!target) {
+  // Icon-style: centered icon + label
+  if (context === 'react:icon') {
     return (
-      <div className="launcher-glass flex h-full w-full items-center justify-center rounded-2xl bg-white/10">
-        <span className="text-xs text-zinc-400">Loading...</span>
+      <div
+        className="relative flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 overflow-visible"
+        onClick={() => !editing && navigate(target.$path)}
+      >
+        {editing && onRemove && onContextChange && (
+          <EditOverlay ctx={stored} onRemove={onRemove} onContextChange={onContextChange} />
+        )}
+        <div className="h-14 w-14 shrink-0">
+          {renderContent}
+        </div>
+        <span className="max-w-16 truncate text-center text-[11px] font-medium text-white/90 drop-shadow-sm">
+          {label}
+        </span>
       </div>
     );
   }
 
+  // Card-style: glass card with content
   return (
     <div
       className="launcher-glass relative h-full w-full cursor-pointer overflow-visible rounded-2xl border border-white/10 bg-white/10 p-3"
       onClick={() => !editing && navigate(target.$path)}
     >
-      {editing && onRemove && (
-        <WidgetCloseButton
-          onClick={() => {
-            e.stopPropagation();
-            onRemove();
-          }}
-        />
+      {editing && onRemove && onContextChange && (
+        <EditOverlay ctx={stored} onRemove={onRemove} onContextChange={onContextChange} />
       )}
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-white/50">
-        {target.$path.split('/').at(-1)}
+        {label}
       </div>
       <div className="h-[calc(100%-1.5rem)] overflow-hidden text-white">
-        <RenderContext name="react:widget">
-          <Render value={target} />
-        </RenderContext>
+        {renderContent}
       </div>
     </div>
   );
 }
 
-// ── Add app dialog (simple inline) ──
+// ── Drop zone overlay ──
 
-function AddAppInput({ launcherPath, onClose }: { launcherPath: string; onClose: () => void }) {
-  const [path, setPath] = useState('');
-
-  const handleAdd = async () => {
-    const p = path.trim();
-    if (!p) return;
-    await execute(launcherPath, 'addApp', { path: p });
-    setPath('');
-    onClose();
-  };
-
+function DropZone({ visible }: { visible: boolean }) {
+  if (!visible) return null;
   return (
-    <div className="flex items-center gap-2 rounded-2xl bg-white/10 p-3 backdrop-blur-xl">
-      <Input
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-        placeholder="/path/to/node"
-        className="border-white/20 bg-transparent text-white placeholder:text-white/40"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') handleAdd();
-        }}
-        autoFocus
-      />
-      <Button size="sm" variant="secondary" onClick={handleAdd}>
-        Add
-      </Button>
-      <Button size="sm" variant="ghost" className="text-white/60" onClick={onClose}>
-        <X className="h-4 w-4" />
-      </Button>
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-blue-400/60 bg-blue-500/10 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-1 text-blue-300">
+        <Plus className="h-8 w-8" />
+        <span className="text-sm font-medium">Drop node here</span>
+      </div>
     </div>
   );
 }
 
 // ── Main Launcher View ──
 
-function LauncherView({ value }: { value: NodeData }) {
-  const proxy = usePath(value.$path, Launcher);
+const LauncherView: View<NodeData> = ({ value }) => {
+  const launcher = usePath(value.$path, Launcher);
   const children = useChildren(value.$path, { watch: true, watchNew: true });
 
   const [editing, setEditing] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   // Measure container width for RGL
   const containerRef = useRef<HTMLDivElement>(null);
@@ -185,11 +204,11 @@ function LauncherView({ value }: { value: NodeData }) {
   }, []);
 
   // Parse layout
-  const columns = typeof proxy?.columns === 'number' ? proxy.columns : 4;
-  const wallpaper = typeof proxy?.wallpaper === 'string' ? proxy.wallpaper : '';
-  const layoutStr = typeof proxy?.layout === 'string' ? proxy.layout : '[]';
+  const columns = typeof launcher?.columns === 'number' ? launcher.columns : 4;
+  const wallpaper = typeof launcher?.wallpaper === 'string' ? launcher.wallpaper : '';
+  const layoutStr = typeof launcher?.layout === 'string' ? launcher.layout : '[]';
 
-  let layoutItems: LayoutItem[];
+  let layoutItems: LauncherLayoutItem[];
   try {
     layoutItems = JSON.parse(layoutStr);
   } catch {
@@ -223,16 +242,62 @@ function LauncherView({ value }: { value: NodeData }) {
   const rowHeight = 90;
 
   const persistLayout = useCallback(
-    (newLayout: readonly LayoutItem[]) => {
-      const clean = newLayout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
-      execute(value.$path, 'updateLayout', { layout: JSON.stringify(clean) });
+    (newLayout: readonly LauncherLayoutItem[]) => {
+      // Preserve ctx from current layoutItems
+      const ctxMap = new Map(layoutItems.map((l) => [l.i, l.ctx]));
+      const clean = newLayout.map(({ i, x, y, w, h }) => ({
+        i, x, y, w, h,
+        ...(ctxMap.get(i) ? { ctx: ctxMap.get(i) } : {}),
+      }));
+      launcher.updateLayout({ layout: JSON.stringify(clean) });
+    },
+    [launcher, layoutItems],
+  );
+
+  const handleRemove = (id: string) => {
+    launcher.removeApp({ id });
+  };
+
+  const handleContextChange = (id: string, ctx: string) => {
+    const updated = layoutItems.map((l) =>
+      l.i === id ? { ...l, ctx: ctx === 'auto' ? undefined : ctx } : l,
+    );
+    launcher.updateLayout({ layout: JSON.stringify(updated) });
+  };
+
+  // ── External drop from tree sidebar ──
+
+  const handleExternalDrop = useCallback(
+    (_layout: unknown, _item: unknown, e: Event) => {
+      const de = e as DragEvent;
+      const path = de.dataTransfer?.getData('application/treenity-path')
+        || de.dataTransfer?.getData('text/plain');
+      if (!path || !path.startsWith('/')) return;
+      launcher.addApp({ path });
+      setDragOver(false);
     },
     [value.$path],
   );
 
-  const handleRemove = (id: string) => {
-    execute(value.$path, 'removeApp', { id });
-  };
+  // Container-level drop for when grid is empty or drop misses grid items
+  const handleContainerDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/treenity-path')) {
+      e.preventDefault();
+      setDragOver(true);
+    }
+  }, []);
+
+  const handleContainerDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const path = e.dataTransfer.getData('application/treenity-path')
+        || e.dataTransfer.getData('text/plain');
+      if (!path || !path.startsWith('/')) return;
+      launcher.addApp({ path });
+    },
+    [launcher],
+  );
 
   return (
     <div
@@ -241,6 +306,9 @@ function LauncherView({ value }: { value: NodeData }) {
         editing && 'launcher-editing',
       )}
       style={{ background: wallpaper || undefined }}
+      onDragOver={handleContainerDragOver}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleContainerDrop}
     >
       {/* Status bar */}
       <div className="flex items-center justify-between px-5 pb-2 pt-3">
@@ -258,80 +326,76 @@ function LauncherView({ value }: { value: NodeData }) {
         </Button>
       </div>
 
+      {/* Drop zone overlay */}
+      <DropZone visible={dragOver && children.length === 0} />
+
       {/* Grid */}
-      <div className="launcher-grid px-3" ref={containerRef}>
+      <div className="launcher-grid px-3 relative" ref={containerRef}>
         <GridLayout
           layout={layoutItems}
           width={gridWidth}
           gridConfig={{
             cols: columns,
             rowHeight,
-            margin: [12, 12],
+            margin: [12, 12] as const,
             containerPadding: null,
             maxRows: Infinity,
           }}
-          dragConfig={{ enabled: editing, handle: '.launcher-item' }}
+          dragConfig={{ enabled: editing, handle: '.launcher-item', cancel: '.launcher-btn' }}
           resizeConfig={{ enabled: editing }}
+          dropConfig={{
+            enabled: true,
+            defaultItem: { w: 1, h: 1 },
+          }}
           onDragStop={(layout) => persistLayout(layout)}
           onResizeStop={(layout) => persistLayout(layout)}
+          onDrop={handleExternalDrop}
         >
           {layoutItems.map((item) => {
             const child = childMap.get(item.i);
             if (!child) return <div key={item.i} />;
 
-            const isWidget = item.w > 1 || item.h > 1;
-
             return (
-              <div key={item.i} className="launcher-item h-full">
+              <div key={item.i} className="launcher-item h-full overflow-visible">
                 <div
                   className={cn(
-                    'h-full transition-transform duration-300',
+                    'h-full overflow-visible transition-transform duration-300',
                     editing && 'launcher-edit-item',
                   )}
                 >
-                  {isWidget ? (
-                    <WidgetCard
-                      refNode={child}
-                      editing={editing}
-                      onRemove={() => handleRemove(item.i)}
-                    />
-                  ) : (
-                    <AppIcon
-                      refNode={child}
-                      editing={editing}
-                      onRemove={() => handleRemove(item.i)}
-                    />
-                  )}
+                  <AppItem
+                    refNode={child}
+                    context={resolveContext(item)}
+                    stored={getStoredCtx(item)}
+                    editing={editing}
+                    onRemove={() => handleRemove(item.i)}
+                    onContextChange={(ctx) => handleContextChange(item.i, ctx)}
+                  />
                 </div>
               </div>
             );
           })}
         </GridLayout>
+
+        {/* Inline drop hint when grid has items */}
+        {dragOver && children.length > 0 && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center py-4">
+            <div className="rounded-full bg-blue-500/30 border border-blue-400/50 px-4 py-2 text-sm text-blue-200 backdrop-blur-sm">
+              Drop to add to launcher
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Add button (edit mode) */}
-      {editing && !showAdd && (
-        <div className="flex justify-center py-4">
-          <Button
-            variant="secondary"
-            className="rounded-full"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowAdd(true);
-            }}
-          >
-            <Plus className="mr-1 h-4 w-4" /> Add App
-          </Button>
-        </div>
-      )}
-
-      {showAdd && (
-        <div className="px-4 py-2">
-          <AddAppInput launcherPath={value.$path} onClose={() => setShowAdd(false)} />
+      {/* Empty state */}
+      {children.length === 0 && !dragOver && (
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-white/40">
+          <GripVertical className="h-12 w-12" />
+          <p className="text-sm">Drag nodes from the tree to add them here</p>
         </div>
       )}
     </div>
   );
-}
+};
 
-register('launcher', 'react', LauncherView as any);
+register('launcher', 'react', LauncherView);

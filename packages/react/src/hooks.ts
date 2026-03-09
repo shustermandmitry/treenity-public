@@ -6,9 +6,18 @@
 // watch:       universal async generator
 
 import { type Class, getComp, type TypeProxy } from '@treenity/core/comp';
-import { getComponent, type NodeData, normalizeType } from '@treenity/core/core';
+import { getComponent, type NodeData, normalizeType, resolve } from '@treenity/core/core';
 import { deriveURI, parseURI } from '@treenity/core/uri';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import * as cache from './cache';
 import { tree } from './client';
 import { trpc } from './trpc';
@@ -113,11 +122,25 @@ export async function set(next: NodeData) {
 export const execute = (
   pathOrUri: string, action: string, data?: unknown, type?: string, key?: string,
 ) => {
+  let path = pathOrUri;
   if (!key && pathOrUri.includes('#')) {
-    const { path, key } = parseURI(pathOrUri);
-    return trpc.execute.mutate({ path, type, key, action, data });
+    const parsed = parseURI(pathOrUri);
+    path = parsed.path;
+    key = parsed.key;
   }
-  return trpc.execute.mutate({ path: pathOrUri, type, key, action, data });
+
+  // Optimistic: resolve class from cache + registry, predict locally
+  const cached = cache.get(path);
+  if (cached) {
+    const compType = type ?? cached.$type;
+    const cls = resolve(compType, 'class');
+    if (cls) {
+      const fn = cls.prototype?.[action];
+      if (fn) predictOptimistic(path, cls, key, fn, data);
+    }
+  }
+
+  return trpc.execute.mutate({ path, type, key, action, data });
 };
 
 // ── useCanWrite: ACL-based write permission check ──
@@ -148,6 +171,27 @@ export function useCanWrite(path: string | null): boolean {
 // ── Internals ──
 
 const AsyncGenFn = Object.getPrototypeOf(async function* () { }).constructor;
+const AsyncFn = Object.getPrototypeOf(async function () { }).constructor;
+
+/** Optimistic prediction: run a sync method locally on a cloned cached node */
+export function predictOptimistic<T extends object>(
+  path: string, cls: Class<T>, key: string | undefined,
+  fn: Function, data: unknown,
+): void {
+  if (fn instanceof AsyncFn) return;
+
+  const cached = cache.get(path);
+  if (!cached) return;
+
+  try {
+    const draft = structuredClone(cached);
+    const target = getComponent(draft, cls, key);
+    if (!target) return;
+
+    fn.call(target, data);
+    cache.put(draft);
+  } catch { /* prediction failed — server-only */ }
+}
 
 function streamToAsyncIterable<T>(
   input: { path: string; type?: string; key?: string; action: string; data?: unknown },
@@ -197,7 +241,11 @@ function makeProxy<T extends object>(
       if (typeof fn === 'function') {
         if (fn instanceof AsyncGenFn)
           return (data?: unknown) => streamToAsyncIterable({ path, type, key, action: prop, data });
-        return (data?: unknown) => trpc.execute.mutate({ path, type, key, action: prop, data });
+
+        return (data?: unknown) => {
+          predictOptimistic(path, cls, key, fn, data);
+          return trpc.execute.mutate({ path, type, key, action: prop, data });
+        };
       }
       return (comp as any)?.[prop];
     },

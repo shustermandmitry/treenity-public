@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '#lib/utils';
+import { cn } from '#components/lib/utils';
 import { Progress as ProgressPrimitive } from 'radix-ui';
 import * as React from 'react';
 

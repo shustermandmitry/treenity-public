@@ -162,9 +162,9 @@ export function AclEditor({ path, owner, rules, currentUserId, onChange }: Props
   }
 
   return (
-    <div className="card">
+    <div className="border-t border-border mt-2 pt-0.5 first:border-t-0 first:mt-0 first:pt-0">
       <div
-        className="card-header cursor-pointer select-none"
+        className="flex items-center justify-between py-2 pb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none"
         onClick={() => setOpen((v) => !v)}
       >
         <span>Access Control</span>
@@ -200,7 +200,7 @@ export function AclEditor({ path, owner, rules, currentUserId, onChange }: Props
         </span>
       </div>
       {open && (
-        <div className="card-body space-y-3">
+        <div className="py-0.5 pb-2.5 space-y-3">
           <div className="field">
             <label className="text-xs text-muted-foreground">$owner</label>
             <Input value={owner} onChange={(e) => onChange(e.target.value, rules)} />

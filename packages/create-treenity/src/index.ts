@@ -5,12 +5,12 @@ import { basename, resolve } from 'node:path';
 import { parseArgs, promptUser } from './prompts';
 import { scaffold } from './scaffold';
 
-const { name: rawName, yes } = parseArgs(process.argv)
+const { name: rawName, yes, template } = parseArgs(process.argv)
 const name = rawName ? basename(rawName) : undefined
 
 if (!yes) intro('create-treenity')
 
-const choices = await promptUser(name, yes)
+const choices = await promptUser(name, yes, template)
 const targetDir = rawName ? resolve(rawName) : resolve(choices.projectName)
 
 if (existsSync(targetDir)) {

@@ -1,44 +1,29 @@
-// MindMap View — radial tree visualization of Treenity nodes
+// MindMap View — Miro-style horizontal tree with organic curves
 // Activated by adding mindmap.map component to any node
 
 import { register } from '@treenity/core/core';
+import type { View } from '@treenity/react/context';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RadialTree } from './radial-tree';
+import { MindMapTree } from './radial-tree';
 import { MindMapSidebar } from './sidebar';
+import type { MindMapConfig } from './types';
 import { type TreeItem, useTreeData } from './use-tree-data';
 import './mindmap.css';
 
 const DEFAULT_DIMS = { w: 800, h: 600 };
 
-// Deterministic branch color palette — visually distinct hues
 const PALETTE = [
-  '#6366f1', // indigo
-  '#f59e0b', // amber
-  '#10b981', // emerald
-  '#ef4444', // red
-  '#8b5cf6', // violet
-  '#06b6d4', // cyan
-  '#f97316', // orange
-  '#ec4899', // pink
-  '#14b8a6', // teal
-  '#84cc16', // lime
+  '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6',
+  '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#84cc16',
 ];
 
-function hashColor(str: string, idx: number): string {
-  return PALETTE[idx % PALETTE.length];
-}
-
-// Build color map: each top-level branch gets a unique color,
-// children inherit parent branch color
 function buildBranchColors(tree: TreeItem | null): Map<string, string> {
   const colors = new Map<string, string>();
   if (!tree) return colors;
 
-  colors.set(tree.path, 'var(--text)'); // root gets neutral color
-
+  colors.set(tree.path, 'var(--text)');
   tree.children.forEach((child, i) => {
-    const color = hashColor(child.path, i);
-    assignColor(child, color, colors);
+    assignColor(child, PALETTE[i % PALETTE.length], colors);
   });
 
   return colors;
@@ -46,32 +31,28 @@ function buildBranchColors(tree: TreeItem | null): Map<string, string> {
 
 function assignColor(item: TreeItem, color: string, map: Map<string, string>) {
   map.set(item.path, color);
-  for (const child of item.children) {
-    assignColor(child, color, map);
-  }
+  for (const child of item.children) assignColor(child, color, map);
 }
 
-// Find a component by $type on a node
-function findComp(node: any, type: string): any {
+function findComp(node: Record<string, unknown>, type: string): Record<string, unknown> | null {
   for (const [k, v] of Object.entries(node)) {
     if (k.startsWith('$')) continue;
-    if (typeof v === 'object' && v !== null && (v as any).$type === type) return v;
+    if (typeof v === 'object' && v !== null && (v as Record<string, unknown>).$type === type) {
+      return v as Record<string, unknown>;
+    }
   }
   return null;
 }
 
-type Props = { value: any };
-
-function MindMapView({ value }: Props) {
-  const config = findComp(value, 'mindmap.map');
-  const rootPath = (config?.root || value.$path) as string;
-  const maxChildren = config?.maxChildren ?? 50;
+const MindMapView: View<MindMapConfig> = ({ value, ctx }) => {
+  const config = findComp(value as Record<string, unknown>, 'mindmap.map');
+  const rootPath = ((config?.root as string) || ctx!.path) as string;
+  const maxChildren = (config?.maxChildren as number) ?? 50;
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([rootPath]));
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState(DEFAULT_DIMS);
 
-  // Measure container
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(entries => {
@@ -82,13 +63,9 @@ function MindMapView({ value }: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Fetch tree data
   const tree = useTreeData(rootPath, expanded, maxChildren);
-
-  // Branch colors
   const branchColors = useMemo(() => buildBranchColors(tree), [tree]);
 
-  // Handlers
   const handleSelect = useCallback((path: string) => {
     setSelectedPath(prev => prev === path ? null : path);
   }, []);
@@ -97,7 +74,6 @@ function MindMapView({ value }: Props) {
     setExpanded(prev => {
       const next = new Set(prev);
       if (next.has(path)) {
-        // Collapse: remove this path and all descendants
         for (const p of next) {
           if (p === path || p.startsWith(path + '/')) next.delete(p);
         }
@@ -110,13 +86,11 @@ function MindMapView({ value }: Props) {
 
   const handleCloseSidebar = useCallback(() => setSelectedPath(null), []);
 
-  // Navigate to node in Inspector (use URL)
   const handleNavigate = useCallback((path: string) => {
     window.history.pushState(null, '', '/t' + path);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }, []);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -127,7 +101,6 @@ function MindMapView({ value }: Props) {
       }
       if (e.key === 'Backspace' && selectedPath) {
         e.preventDefault();
-        // Collapse selected or navigate to parent
         if (expanded.has(selectedPath)) {
           handleToggle(selectedPath);
         } else {
@@ -156,7 +129,7 @@ function MindMapView({ value }: Props) {
 
   return (
     <div className="mm-container" ref={containerRef}>
-      <RadialTree
+      <MindMapTree
         data={tree}
         selectedPath={selectedPath}
         onSelect={handleSelect}
@@ -175,9 +148,6 @@ function MindMapView({ value }: Props) {
       )}
     </div>
   );
-}
+};
 
-// Component-type registration: makes getContextsForType('mindmap.map') discover 'react:mindmap'
-register('mindmap.map', 'react:mindmap', MindMapView as any);
-// Default fallback: any node type resolves to MindMapView in react:mindmap context
-register('default', 'react:mindmap', MindMapView as any);
+register('mindmap.map', 'react', MindMapView);

@@ -28,7 +28,7 @@ function getTemplates(): Record<string, string> {
   return loadTemplatesFromFS()
 }
 
-type Group = '_base' | '_frontend' | '_example'
+type Group = '_base' | '_frontend' | '_example' | '_agent-runtime'
 
 const FRONTEND_DEPS = {
   dependencies: {
@@ -48,6 +48,7 @@ const FRONTEND_DEPS = {
 
 function getGroups(choices: Choices): Group[] {
   const groups: Group[] = ['_base']
+  if (choices.template === 'agent-runtime') groups.push('_agent-runtime')
   if (choices.frontend) groups.push('_frontend')
   if (choices.exampleMod) groups.push('_example')
   return groups
@@ -78,7 +79,14 @@ export function scaffold(targetDir: string, choices: Choices) {
   const groups = getGroups(choices)
   const pkgJsonParts: string[] = []
 
-  for (const [tmplPath, content] of Object.entries(templates)) {
+  // Process groups in order so later groups override earlier files
+  const sorted = Object.entries(templates).sort(([a], [b]) => {
+    const ga = groups.indexOf(a.split('/')[0] as Group)
+    const gb = groups.indexOf(b.split('/')[0] as Group)
+    return ga - gb
+  })
+
+  for (const [tmplPath, content] of sorted) {
     const group = tmplPath.split('/')[0] as Group
     if (!groups.includes(group)) continue
 

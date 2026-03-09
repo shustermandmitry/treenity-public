@@ -1,12 +1,11 @@
-// Radial tree renderer — D3 hierarchy layout + React SVG
-// Produces organic bezier curves radiating from center
+// Miro-style mind map — horizontal balanced tree with organic bezier curves
+// Pure SVG: text labels + colored branches, no foreignObject
 
-import { hierarchy, tree as d3tree } from 'd3-hierarchy';
+import { hierarchy, type HierarchyPointNode, tree as d3tree } from 'd3-hierarchy';
 import { select } from 'd3-selection';
 import 'd3-transition';
 import { zoom as d3zoom, type ZoomBehavior, zoomIdentity } from 'd3-zoom';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { NodeCard } from './node-card';
 import type { TreeItem } from './use-tree-data';
 
 type Props = {
@@ -19,58 +18,157 @@ type Props = {
   height: number;
 };
 
-// Card dimensions for foreignObject
-const CARD_W = 160;
-const CARD_H_BASE = 40;
-const CARD_H_WITH_COMPS = 62;
-const CARD_H_WITH_CHILDREN = 76;
+// Type → icon mapping (simple SVG paths)
+const TYPE_ICONS: Record<string, string> = {
+  dir: 'M2 4h5l2 2h9v12H2V4z',
+  ref: 'M10 2a8 8 0 100 16 8 8 0 000-16zm1 4v4l3.5 2.1-.8 1.3L9 11V6h2z',
+  user: 'M12 4a4 4 0 110 8 4 4 0 010-8zM12 14c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z',
+  root: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+};
 
-function estimateHeight(item: TreeItem): number {
-  let h = CARD_H_BASE;
-  if (item.components.length > 0) h = CARD_H_WITH_COMPS;
-  if (item.expanded && item.childCount > 0) h = CARD_H_WITH_CHILDREN;
+function getIcon(type: string): string | null {
+  if (TYPE_ICONS[type]) return TYPE_ICONS[type];
+  const base = type.split('.')[0];
+  return TYPE_ICONS[base] ?? null;
+}
+
+// Measure text width roughly (8px per char at 13px font, 6.5px at 11px)
+function textWidth(str: string, fontSize: number): number {
+  return str.length * fontSize * 0.62;
+}
+
+// Split tree children: odd indices left, even indices right (balanced)
+type SplitNode = TreeItem & { _side?: 'left' | 'right' };
+
+function splitTree(root: TreeItem): SplitNode {
+  const left: SplitNode[] = [];
+  const right: SplitNode[] = [];
+
+  root.children.forEach((child, i) => {
+    const tagged = { ...child, _side: (i % 2 === 0 ? 'right' : 'left') as const };
+    if (i % 2 === 0) right.push(tagged);
+    else left.push(tagged);
+  });
+
+  return { ...root, children: [...right, ...left] };
+}
+
+function tagSide(item: SplitNode, side: 'left' | 'right'): SplitNode {
+  return {
+    ...item,
+    _side: item._side ?? side,
+    children: item.children.map(c => tagSide(c as SplitNode, side)),
+  };
+}
+
+function buildSide(root: TreeItem, children: SplitNode[], side: 'left' | 'right'): SplitNode {
+  return {
+    ...root,
+    _side: undefined,
+    children: children.map(c => tagSide(c, side)),
+  };
+}
+
+// Organic cubic bezier — Miro-style smooth S-curve
+function linkPath(sx: number, sy: number, tx: number, ty: number): string {
+  const dx = tx - sx;
+  const cp = Math.abs(dx) * 0.5;
+  return `M${sx},${sy} C${sx + (dx > 0 ? cp : -cp)},${sy} ${tx - (dx > 0 ? cp : -cp)},${ty} ${tx},${ty}`;
+}
+
+type LayoutNode = HierarchyPointNode<SplitNode> & { _rx?: number; _ry?: number };
+
+function layoutHalf(
+  root: TreeItem,
+  children: SplitNode[],
+  side: 'left' | 'right',
+  height: number,
+): LayoutNode | null {
+  if (children.length === 0) return null;
+
+  const subtree = buildSide(root, children, side);
+  const h = hierarchy(subtree, d => d.children) as LayoutNode;
+
+  const nodeCount = h.descendants().length;
+  const treeHeight = Math.max(height * 0.8, nodeCount * 32);
+
+  const layout = d3tree<SplitNode>()
+    .size([treeHeight, 220 * Math.max(1, h.height)])
+    .separation((a, b) => (a.parent === b.parent ? 1 : 1.5));
+
+  layout(h);
+
+  // Convert: d3tree gives vertical layout (x=vertical, y=horizontal)
+  // We flip and mirror for left side
+  for (const node of h.descendants()) {
+    const lNode = node as LayoutNode;
+    if (side === 'left') {
+      lNode._rx = -lNode.y!;
+      lNode._ry = lNode.x! - treeHeight / 2;
+    } else {
+      lNode._rx = lNode.y!;
+      lNode._ry = lNode.x! - treeHeight / 2;
+    }
+  }
+
   return h;
 }
 
-// Radial point: convert (angle, radius) to (x, y)
-function radialPoint(x: number, y: number): [number, number] {
-  return [y * Math.cos(x - Math.PI / 2), y * Math.sin(x - Math.PI / 2)];
-}
-
-// Point just outside card boundary in the direction of a target
-function cardEdge(cx: number, cy: number, tx: number, ty: number, w: number, h: number): [number, number] {
-  const dx = tx - cx;
-  const dy = ty - cy;
-  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return [cx, cy];
-  const PAD = 4; // push link start/end outside the card
-  const scale = Math.min(
-    dx !== 0 ? (w / 2 + PAD) / Math.abs(dx) : Infinity,
-    dy !== 0 ? (h / 2 + PAD) / Math.abs(dy) : Infinity,
-  );
-  return [cx + dx * scale, cy + dy * scale];
-}
-
-export function RadialTree({ data, selectedPath, onSelect, onToggle, branchColors, width, height }: Props) {
+export function MindMapTree({ data, selectedPath, onSelect, onToggle, branchColors, width, height }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
 
-  // Build D3 hierarchy
-  const root = useMemo(() => {
-    const h = hierarchy(data, d => d.children);
-    const nodeCount = h.descendants().length;
+  // Split into left/right halves
+  const { leftNodes, rightNodes } = useMemo(() => {
+    const split = splitTree(data);
+    const leftChildren: SplitNode[] = [];
+    const rightChildren: SplitNode[] = [];
+    for (const c of split.children) {
+      if ((c as SplitNode)._side === 'left') leftChildren.push(c as SplitNode);
+      else rightChildren.push(c as SplitNode);
+    }
 
-    // Dynamic radius based on node count
-    const baseRadius = Math.max(200, nodeCount * 18);
-    const layout = d3tree<TreeItem>()
-      .size([2 * Math.PI, baseRadius])
-      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
+    const left = layoutHalf(data, leftChildren, 'left', height);
+    const right = layoutHalf(data, rightChildren, 'right', height);
 
-    layout(h);
-    return h;
-  }, [data]);
+    return {
+      leftNodes: left ? left.descendants().slice(1) : [],
+      rightNodes: right ? right.descendants().slice(1) : [],
+    };
+  }, [data, height]);
 
-  // D3 zoom setup
+  const allNodes = useMemo(() => [...leftNodes, ...rightNodes], [leftNodes, rightNodes]);
+
+  // Build links from parent→child coords
+  const links = useMemo(() => {
+    const result: { key: string; path: string; color: string; width: number; source: LayoutNode; target: LayoutNode }[] = [];
+
+    for (const node of allNodes) {
+      const parent = node.parent as LayoutNode | null;
+      if (!parent) continue;
+
+      const sx = parent.depth === 0 ? 0 : parent._rx!;
+      const sy = parent.depth === 0 ? 0 : parent._ry!;
+      const tx = node._rx!;
+      const ty = node._ry!;
+      const color = branchColors.get(node.data.path) ?? 'var(--text-3)';
+      const strokeWidth = Math.max(1.5, 3.5 - node.depth * 0.6);
+
+      result.push({
+        key: `${parent.data.path}->${node.data.path}`,
+        path: linkPath(sx, sy, tx, ty),
+        color,
+        width: strokeWidth,
+        source: parent,
+        target: node,
+      });
+    }
+
+    return result;
+  }, [allNodes, branchColors]);
+
+  // Zoom
   useEffect(() => {
     if (!svgRef.current || !gRef.current) return;
 
@@ -79,55 +177,52 @@ export function RadialTree({ data, selectedPath, onSelect, onToggle, branchColor
 
     const zoomBehavior = d3zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
-      .on('zoom', (event) => {
+      .on('zoom', event => {
         g.attr('transform', event.transform.toString());
       });
 
     svg.call(zoomBehavior);
 
-    // Initial transform: center the view
-    const initialTransform = zoomIdentity.translate(width / 2, height / 2).scale(0.8);
+    const initialTransform = zoomIdentity.translate(width / 2, height / 2).scale(0.85);
     svg.call(zoomBehavior.transform, initialTransform);
-
     zoomRef.current = zoomBehavior;
 
     return () => { svg.on('.zoom', null); };
   }, [width, height]);
 
-  // Fit view to content
+  // Fit view
   const fitView = useCallback(() => {
-    if (!svgRef.current || !zoomRef.current) return;
+    if (!svgRef.current || !zoomRef.current || !gRef.current) return;
     const svg = select(svgRef.current);
-    const bounds = gRef.current?.getBBox();
-    if (!bounds) return;
+    const bounds = gRef.current.getBBox();
+    if (!bounds.width || !bounds.height) return;
 
-    const fullWidth = bounds.width || 1;
-    const fullHeight = bounds.height || 1;
+    const pad = 60;
     const scale = Math.min(
-      (width * 0.9) / fullWidth,
-      (height * 0.9) / fullHeight,
-      2,
+      (width - pad * 2) / bounds.width,
+      (height - pad * 2) / bounds.height,
+      1.5,
     );
-    const tx = width / 2 - (bounds.x + fullWidth / 2) * scale;
-    const ty = height / 2 - (bounds.y + fullHeight / 2) * scale;
+    const tx = width / 2 - (bounds.x + bounds.width / 2) * scale;
+    const ty = height / 2 - (bounds.y + bounds.height / 2) * scale;
 
-    svg.transition().duration(500).call(
+    svg.transition().duration(400).call(
       zoomRef.current.transform,
       zoomIdentity.translate(tx, ty).scale(scale),
     );
   }, [width, height]);
 
-  // Re-fit on data change
+  // Auto-fit on data change
   useEffect(() => {
-    const timer = setTimeout(fitView, 100);
-    return () => clearTimeout(timer);
+    const t = setTimeout(fitView, 80);
+    return () => clearTimeout(t);
   }, [data, fitView]);
 
-  const descendants = root.descendants();
-  const links = root.links();
+  const rootName = data.name === '/' ? '/' : data.name;
+  const rootColor = branchColors.get(data.path) ?? 'var(--text)';
 
   return (
-    <div className="mm-tree-container">
+    <div className="mm-tree-wrap">
       <div className="mm-toolbar">
         <button className="mm-btn" onClick={fitView} title="Fit view">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -138,87 +233,152 @@ export function RadialTree({ data, selectedPath, onSelect, onToggle, branchColor
 
       <svg ref={svgRef} width={width} height={height} className="mm-svg">
         <g ref={gRef}>
-          {/* Links — edge-to-edge radial beziers */}
-          <g className="mm-links">
-            {links.map(link => {
-              // Node centers
-              const [scx, scy] = link.source.depth === 0 ? [0, 0] : radialPoint(link.source.x!, link.source.y!);
-              const [tcx, tcy] = radialPoint(link.target.x!, link.target.y!);
-              const color = branchColors.get(link.target.data.path) ?? 'var(--border)';
+          {/* Links */}
+          {links.map(l => (
+            <path
+              key={l.key}
+              d={l.path}
+              fill="none"
+              stroke={l.color}
+              strokeWidth={l.width}
+              strokeOpacity={0.7}
+              strokeLinecap="round"
+              className="mm-link"
+            />
+          ))}
 
-              // Start/end at card edges, not centers
-              const sH = estimateHeight(link.source.data);
-              const tH = estimateHeight(link.target.data);
-              const [sx, sy] = cardEdge(scx, scy, tcx, tcy, CARD_W, sH);
-              const [tx, ty] = cardEdge(tcx, tcy, scx, scy, CARD_W, tH);
+          {/* Root node — pill shape */}
+          <g
+            className={`mm-node mm-root${selectedPath === data.path ? ' mm-node-selected' : ''}`}
+            onClick={() => onSelect(data.path)}
+            onDoubleClick={() => onToggle(data.path)}
+          >
+            <rect
+              x={-textWidth(rootName, 16) / 2 - 24}
+              y={-20}
+              width={textWidth(rootName, 16) + 48}
+              height={40}
+              rx={20}
+              className="mm-root-bg"
+            />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              className="mm-root-label"
+            >
+              {rootName}
+            </text>
+          </g>
 
-              // Radial unit vectors for control point direction
-              const sLen = Math.sqrt(scx * scx + scy * scy);
-              const tLen = Math.sqrt(tcx * tcx + tcy * tcy) || 1;
-              const edgeDist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2) || 1;
-              const stretch = edgeDist * 0.4;
+          {/* Child nodes — text labels with optional icon */}
+          {allNodes.map(node => {
+            const d = node.data;
+            const x = node._rx!;
+            const y = node._ry!;
+            const color = branchColors.get(d.path) ?? 'var(--text-2)';
+            const isLeft = d._side === 'left';
+            const isSelected = selectedPath === d.path;
+            const icon = getIcon(d.type);
+            const hasChildren = d.childCount > 0;
+            const label = d.name;
 
-              // Source control: push outward along radial direction
-              const srx = sLen > 1 ? scx / sLen : tcx / tLen;
-              const sry = sLen > 1 ? scy / sLen : tcy / tLen;
-              const c1x = sx + srx * stretch;
-              const c1y = sy + sry * stretch;
+            // Type badge (short)
+            const shortType = d.type.includes('.') ? d.type.split('.').pop()! : '';
 
-              // Target control: push inward (opposite of radial)
-              const c2x = tx - (tcx / tLen) * stretch;
-              const c2y = ty - (tcy / tLen) * stretch;
-
-              return (
-                <path
-                  key={`${link.source.data.path}->${link.target.data.path}`}
-                  d={`M${sx},${sy} C${c1x},${c1y} ${c2x},${c2y} ${tx},${ty}`}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={Math.max(1.5, 3 - link.target.depth * 0.4)}
-                  strokeOpacity={0.6}
-                  className="mm-link"
+            return (
+              <g
+                key={d.path}
+                transform={`translate(${x},${y})`}
+                className={`mm-node${isSelected ? ' mm-node-selected' : ''}`}
+                onClick={() => onSelect(d.path)}
+                onDoubleClick={() => onToggle(d.path)}
+              >
+                {/* Invisible hit area */}
+                <rect
+                  x={isLeft ? -textWidth(label, 13) - 30 : -10}
+                  y={-14}
+                  width={textWidth(label, 13) + 50}
+                  height={28}
+                  fill="transparent"
+                  className="mm-hit"
                 />
-              );
-            })}
-          </g>
 
-          {/* Nodes — opaque background + card */}
-          <g className="mm-nodes">
-            {descendants.map(d => {
-              const [x, y] = d.depth === 0 ? [0, 0] : radialPoint(d.x!, d.y!);
-              const h = estimateHeight(d.data);
-              const color = branchColors.get(d.data.path) ?? 'var(--text-2)';
-
-              return (
-                <g key={d.data.path} transform={`translate(${x},${y})`}>
-                  {/* Opaque background so links don't show through */}
+                {/* Selection indicator */}
+                {isSelected && (
                   <rect
-                    x={-CARD_W / 2 - 2}
-                    y={-h / 2 - 2}
-                    width={CARD_W + 4}
-                    height={h + 4}
-                    rx={10}
-                    fill="var(--surface)"
+                    x={isLeft ? -textWidth(label, 13) - 26 : -6}
+                    y={-12}
+                    width={textWidth(label, 13) + 42}
+                    height={24}
+                    rx={12}
+                    className="mm-select-bg"
+                    fill={color}
+                    fillOpacity={0.1}
                   />
-                  <foreignObject
-                    x={-CARD_W / 2}
-                    y={-h / 2}
-                    width={CARD_W}
-                    height={h}
-                    className="mm-fo"
+                )}
+
+                {/* Dot at connection point */}
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={hasChildren && !d.expanded ? 4 : 3}
+                  fill={color}
+                  className="mm-dot"
+                />
+
+                {/* Icon */}
+                {icon && (
+                  <g transform={`translate(${isLeft ? -22 : 8}, -8) scale(0.7)`}>
+                    <path d={icon} fill={color} fillOpacity={0.6} />
+                  </g>
+                )}
+
+                {/* Label */}
+                <text
+                  x={isLeft ? -12 : (icon ? 24 : 12)}
+                  textAnchor={isLeft ? 'end' : 'start'}
+                  dominantBaseline="central"
+                  className="mm-label"
+                  fill={color}
+                >
+                  {label}
+                </text>
+
+                {/* Type badge */}
+                {shortType && node.depth <= 2 && (
+                  <text
+                    x={isLeft ? -12 - textWidth(label, 13) - 8 : (icon ? 24 : 12) + textWidth(label, 13) + 8}
+                    textAnchor={isLeft ? 'end' : 'start'}
+                    dominantBaseline="central"
+                    className="mm-type-tag"
+                    fill={color}
                   >
-                    <NodeCard
-                      item={d.data}
-                      selected={selectedPath === d.data.path}
-                      branchColor={color}
-                      onSelect={onSelect}
-                      onToggle={onToggle}
-                    />
-                  </foreignObject>
-                </g>
-              );
-            })}
-          </g>
+                    {shortType}
+                  </text>
+                )}
+
+                {/* Child count badge */}
+                {hasChildren && !d.expanded && (
+                  <g
+                    transform={`translate(${isLeft ? 8 : -8 + (icon ? 24 : 12) + textWidth(label, 13) + (shortType && node.depth <= 2 ? textWidth(shortType, 10) + 16 : 8)}, 0)`}
+                    className="mm-count-badge"
+                    onClick={e => { e.stopPropagation(); onToggle(d.path); }}
+                  >
+                    <circle r={8} fill={color} fillOpacity={0.15} />
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill={color}
+                      fontSize="9"
+                      fontWeight="600"
+                    >
+                      {d.childCount}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
         </g>
       </svg>
     </div>

@@ -1,3 +1,4 @@
+import { Badge } from '#components/ui/badge';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as cache from './cache';
 
@@ -61,8 +62,9 @@ function BadgeMenu({
 
   return (
     <div ref={ref} className="tree-badge-wrap">
-      <span
-        className="tree-badge"
+      <Badge
+        variant="secondary"
+        className="tree-badge cursor-pointer text-[10px] px-1.5 py-0 h-5 font-mono"
         title={fullType}
         onClick={(e) => {
           e.stopPropagation();
@@ -70,7 +72,7 @@ function BadgeMenu({
         }}
       >
         {typeLabel}
-      </span>
+      </Badge>
       {open && (
         <div className="tree-menu">
           <button

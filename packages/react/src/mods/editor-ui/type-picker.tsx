@@ -1,7 +1,8 @@
-import { type NodeData, isOfType } from '@treenity/core/core';
+import { Button } from '#components/ui/button';
+import { trpc } from '#trpc';
+import { isOfType, type NodeData } from '@treenity/core/core';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { trpc } from '#trpc';
 
 export type TypeInfo = { type: string; label: string; description: string };
 
@@ -245,16 +246,15 @@ export function TypePicker({
         </div>
 
         <div className="type-picker-footer">
-          <button onClick={onCancel}>Cancel</button>
-          <button
-            className="primary"
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button
             disabled={!name || !selectedType}
             onClick={handleSubmit}
           >
             {action}
             {name ? ` "${name}"` : ''}
             {selectedType ? ` as ${selectedType}` : ''}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -17,9 +17,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { type NodeData, register } from '@treenity/core/core';
 import { Render, RenderContext, type View } from '@treenity/react/context';
 import { set, useChildren, useNavigate, usePath } from '@treenity/react/hooks';
+import { minimd } from '@treenity/react/lib/minimd';
 import { cn } from '@treenity/react/lib/utils';
 import { trpc } from '@treenity/react/trpc';
-import { minimd } from '@treenity/react/lib/minimd';
 import { Button } from '@treenity/react/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@treenity/react/ui/dialog';
 import { FormField } from '@treenity/react/ui/form-field';
@@ -64,9 +64,10 @@ function AiBadge() {
 
 // ── board.task view — editable task detail ──
 
-function TaskView({ value }: { value: NodeData }) {
-  const node = usePath(value.$path) as NodeData | undefined;
-  const proxy = usePath(value.$path, BoardTask);
+const TaskView: View<BoardTask> = ({ ctx }) => {
+  const path = ctx?.path ?? '';
+  const node = usePath<NodeData>(path);
+  const proxy = usePath(path, BoardTask);
   const [editingDesc, setEditingDesc] = useState(false);
   if (!node || !proxy) return null;
 
@@ -92,7 +93,7 @@ function TaskView({ value }: { value: NodeData }) {
 
       {editingDesc ? (
         <Textarea
-          key={`desc-${value.$path}`}
+          key={`desc-${node.$path}`}
           defaultValue={description}
           placeholder="Add a description..."
           className="max-h-60 min-h-20 resize-none text-sm"
@@ -155,12 +156,32 @@ function TaskView({ value }: { value: NodeData }) {
 
         {(status === 'review' || status === 'done' || result) && (
           <FormField label="Result">
-            <ResultField path={value.$path} result={result} onSave={v => save({ result: v })} />
+            <ResultField path={node.$path} result={result} onSave={v => save({ result: v })} />
           </FormField>
         )}
       </div>
 
+      {/* Named components (ai.plan, ai.thread, etc.) */}
+      <NamedComponents node={node} />
+
       <EmbeddedTaskLog taskRef={typeof node.taskRef === 'string' ? node.taskRef : ''} />
+    </div>
+  );
+};
+
+function NamedComponents({ node }: { node: NodeData }) {
+  const keys = Object.keys(node).filter(k => {
+    if (k.startsWith('$') || k === 'taskRef') return false;
+    const v = node[k];
+    return v && typeof v === 'object' && '$type' in v;
+  });
+  if (!keys.length) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {keys.map(k => (
+        <Render key={k} value={node[k]} />
+      ))}
     </div>
   );
 }
@@ -228,7 +249,7 @@ function EmbeddedTaskLog({ taskRef }: { taskRef: string }) {
   );
 }
 
-register('board.task', 'react', TaskView as any);
+register('board.task', 'react', TaskView);
 
 function TaskListItem({ value }: { value: NodeData }) {
   const nav = useNavigate();
