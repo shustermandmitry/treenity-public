@@ -14,6 +14,7 @@ import {
   serverNodeHandle,
   setComponent as setComponentOp,
 } from './actions';
+import { AGENT_SESSION_TTL, hashAgentKey, timingSafeCompare } from './agent';
 import {
   buildClaims,
   createSession,
@@ -24,7 +25,6 @@ import {
   verifyPassword,
   withAcl,
 } from './auth';
-import { AGENT_SESSION_TTL, hashAgentKey, timingSafeCompare } from './agent';
 import { OpError } from './errors';
 import { deployPrefab as deployPrefabOp } from './prefab';
 import { type NodeEvent, type ReactiveTree, unwatchQuery, watchQuery } from './sub';
@@ -65,9 +65,9 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
     const userId = ctx.session?.userId ?? null;
     // Session-level claims (agents) override dynamic buildClaims (users)
     const claims = ctx.session?.claims ?? (userId ? await buildClaims(baseStore, userId) : ['public']);
-    const store = withAcl(baseStore, userId, claims);
+    const tree = withAcl(baseStore, userId, claims);
 
-    const result = await next({ ctx: { ...ctx, store } });
+    const result = await next({ ctx: { ...ctx, tree } });
 
     if (!result.ok) {
       const cause = result.error.cause;
@@ -87,8 +87,8 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
     get: authed
       .input(z.object({ path: z.string(), watch: z.boolean().optional() }))
       .query(async ({ input, ctx }) => {
-        const node = await ctx.store.get(input.path);
-        if (input.watch && ctx.session && (await ctx.store.getPerm(input.path)) & S)
+        const node = await ctx.tree.get(input.path);
+        if (input.watch && ctx.session && (await ctx.tree.getPerm(input.path)) & S)
           watcher.watch(ctx.session.userId, [input.path]);
         return node;
       }),
@@ -105,7 +105,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
         }),
       )
       .query(async ({ input, ctx }) => {
-        const result = await ctx.store.getChildren(input.path, {
+        const result = await ctx.tree.getChildren(input.path, {
           limit: input.limit,
           offset: input.offset,
           depth: input.depth,
@@ -115,7 +115,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
           if (input.watch) {
             const watchable: string[] = [];
             for (const n of result.items)
-              if ((await ctx.store.getPerm(n.$path)) & S) watchable.push(n.$path);
+              if ((await ctx.tree.getPerm(n.$path)) & S) watchable.push(n.$path);
             if (watchable.length) watcher.watch(ctx.session.userId, watchable);
           }
           if (input.watchNew) {
@@ -131,17 +131,17 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
 
     set: authed
       .input(z.object({ node: z.record(z.string(), z.unknown()) }))
-      .mutation(({ input, ctx }) => ctx.store.set(input.node as NodeData)),
+      .mutation(({ input, ctx }) => ctx.tree.set(input.node as NodeData)),
 
     setComponent: authed
       .input(
         z.object({ path: z.string(), name: z.string(), data: z.record(z.string(), z.unknown()), rev: z.number().optional() }),
       )
-      .mutation(({ input, ctx }) => setComponentOp(ctx.store, input.path, input.name, input.data, input.rev)),
+      .mutation(({ input, ctx }) => setComponentOp(ctx.tree, input.path, input.name, input.data, input.rev)),
 
     remove: authed
       .input(z.object({ path: z.string() }))
-      .mutation(({ input, ctx }) => ctx.store.remove(input.path)),
+      .mutation(({ input, ctx }) => ctx.tree.remove(input.path)),
 
     execute: authed
       .input(
@@ -155,7 +155,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
         }),
       )
       .mutation(async ({ input, ctx }) => {
-        const result = await executeAction(ctx.store, input.path, input.type, input.key, input.action, input.data);
+        const result = await executeAction(ctx.tree, input.path, input.type, input.key, input.action, input.data);
         if (input.watch && ctx.session) {
           const paths = extractPaths(result);
           if (paths.length) watcher.watch(ctx.session.userId, paths);
@@ -164,12 +164,12 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
       }),
 
     getTemplates: authed.query(
-      async ({ ctx }) => (await ctx.store.getChildren('/templates')).items,
+      async ({ ctx }) => (await ctx.tree.getChildren('/templates')).items,
     ),
 
     applyTemplate: authed
       .input(z.object({ templatePath: z.string(), targetPath: z.string() }))
-      .mutation(({ input, ctx }) => applyTemplateOp(ctx.store, input.templatePath, input.targetPath)),
+      .mutation(({ input, ctx }) => applyTemplateOp(ctx.tree, input.templatePath, input.targetPath)),
 
     deployPrefab: authed
       .input(z.object({
@@ -179,7 +179,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
         params: z.any().optional(),
       }))
       .mutation(({ input, ctx }) =>
-        deployPrefabOp(ctx.store, input.source, input.target, {
+        deployPrefabOp(ctx.tree, input.source, input.target, {
           allowAbsolute: input.allowAbsolute,
           params: input.params,
         })),
@@ -231,7 +231,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
 
     getPerm: authed
       .input(z.object({ path: z.string() }))
-      .query(async ({ input, ctx }) => ctx.store.getPerm(input.path)),
+      .query(async ({ input, ctx }) => ctx.tree.getPerm(input.path)),
 
     logout: authed.mutation(async ({ ctx }) => {
       if (!ctx.session || !ctx.token) return { ok: false };
@@ -310,7 +310,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
         return observable<unknown>((emit) => {
           const ac = new AbortController();
           (async () => {
-            const node = await ctx.store.get(input.path);
+            const node = await ctx.tree.get(input.path);
             if (!node) {
               emit.error(new OpError('NOT_FOUND', `Node not found: ${input.path}`));
               return;
@@ -336,7 +336,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
               emit.error(new OpError('BAD_REQUEST', `No action "${input.action}" for type "${node.$type}"`));
               return;
             }
-            const actx: ActionCtx = { node, comp, store: ctx.store, signal: ac.signal, nc: serverNodeHandle(ctx.store) };
+            const actx: ActionCtx = { node, comp, tree: ctx.tree, signal: ac.signal, nc: serverNodeHandle(ctx.tree) };
             const result = handler(actx, input.data);
             if (
               result &&

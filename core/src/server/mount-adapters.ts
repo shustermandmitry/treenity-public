@@ -28,7 +28,7 @@ register('t.mount.mongo', 'mount', async (config: NodeData) => {
   return createMongoTree(uri, conn.db ?? 'treenity', conn.collection ?? 'nodes');
 });
 
-// deps = parent store (used as backing for registry types)
+// deps = parent tree (used as backing for registry types)
 register('t.mount.types', 'mount', (_node, deps) => createTypesStore(deps));
 
 register('t.mount.mods', 'mount', (_node, deps) => createModsStore(deps));

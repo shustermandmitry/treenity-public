@@ -39,7 +39,7 @@ describe('Query Mount', () => {
     assert.deepEqual(children.items.map(n => n.$path).sort(), ['/entities/orders/1', '/entities/orders/3']);
   });
 
-  it('get delegates to parent store (real paths)', async () => {
+  it('get delegates to parent tree (real paths)', async () => {
     await rootStore.set(createNode('/entities/orders/1', 'order', { status: 'new' }));
     await rootStore.set(
       createNode('/workflows/new', 'folder', {}, {

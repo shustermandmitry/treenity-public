@@ -1,5 +1,5 @@
 // TypeCatalog — pure registry-based type discovery
-// No store deps, only core registry. Usable from MCP, services, LLM, tests.
+// No tree deps, only core registry. Usable from MCP, services, LLM, tests.
 
 import { getRegisteredTypes, resolve } from '#core';
 

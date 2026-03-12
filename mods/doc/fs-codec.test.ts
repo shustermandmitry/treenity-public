@@ -11,11 +11,11 @@ import './fs-codec';
 
 describe('doc fs-codec', () => {
   let dir: string;
-  let store: Tree;
+  let tree: Tree;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'treenity-doc-codec-'));
-    store = await createFsTree(dir);
+    tree = await createFsTree(dir);
   });
 
   afterEach(async () => {
@@ -25,7 +25,7 @@ describe('doc fs-codec', () => {
   it('decode: .md file → doc.page node', async () => {
     await writeFile(join(dir, 'readme.md'), '# Hello World\n\nSome content here.\n');
 
-    const node = await store.get('/readme');
+    const node = await tree.get('/readme');
     assert.equal(node?.$type, 'doc.page');
     assert.equal((node as any).title, 'Hello World');
 
@@ -37,7 +37,7 @@ describe('doc fs-codec', () => {
   it('decode: .md without H1 — empty title', async () => {
     await writeFile(join(dir, 'notes.md'), 'Just a paragraph.\n\n## Second heading\n');
 
-    const node = await store.get('/notes');
+    const node = await tree.get('/notes');
     assert.equal(node?.$type, 'doc.page');
     assert.equal((node as any).title, '');
 
@@ -52,7 +52,7 @@ describe('doc fs-codec', () => {
       content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello from Tiptap' }] }],
     };
 
-    await store.set({
+    await tree.set({
       $path: '/output',
       $type: 'doc.page',
       title: 'My Doc',
@@ -70,7 +70,7 @@ describe('doc fs-codec', () => {
       content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Just text' }] }],
     };
 
-    await store.set({
+    await tree.set({
       $path: '/bare',
       $type: 'doc.page',
       title: '',
@@ -87,12 +87,12 @@ describe('doc fs-codec', () => {
     await writeFile(join(dir, 'notes.md'), original);
 
     // Decode
-    const node = await store.get('/notes');
+    const node = await tree.get('/notes');
     assert.equal(node?.$type, 'doc.page');
     assert.equal((node as any).title, 'Project Notes');
 
     // Encode back
-    await store.set(node!);
+    await tree.set(node!);
     const result = await readFile(join(dir, 'notes.md'), 'utf-8');
 
     // Verify key elements survived roundtrip
@@ -109,7 +109,7 @@ describe('doc fs-codec', () => {
     await writeFile(join(dir, 'b.md'), '# Beta\n\nContent B\n');
     await writeFile(join(dir, 'c.txt'), 'plain text');
 
-    const { items } = await store.getChildren('/');
+    const { items } = await tree.getChildren('/');
     const types = Object.fromEntries(items.map(n => [n.$path, n.$type]));
 
     assert.equal(types['/a'], 'doc.page');

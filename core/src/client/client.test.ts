@@ -123,14 +123,14 @@ describe('Treenity Client SDK', () => {
 
     it('set through repath writes to correct remote path', async () => {
       const { tree: remote } = createTrpcTransport({ url });
-      const mounted = createRepathTree(remote, '/mnt', '/store');
+      const mounted = createRepathTree(remote, '/mnt', '/tree');
 
       await mounted.set(createNode('/mnt/new', 'doc', { x: 1 }));
 
       // Verify via direct remote access
-      const node = await remote.get('/store/new');
+      const node = await remote.get('/tree/new');
       assert.ok(node);
-      assert.equal(node.$path, '/store/new');
+      assert.equal(node.$path, '/tree/new');
     });
   });
 
@@ -155,8 +155,8 @@ describe('Treenity Client SDK', () => {
         connection: { $type: 'connection', url, path: '/strategies' },
       });
 
-      const store = withMounts(local);
-      const node = await store.get('/remote/alpha');
+      const tree = withMounts(local);
+      const node = await tree.get('/remote/alpha');
 
       assert.ok(node);
       assert.equal(node.$path, '/remote/alpha');
@@ -181,8 +181,8 @@ describe('Treenity Client SDK', () => {
         connection: { $type: 'connection', url, path: '/items' },
       });
 
-      const store = withMounts(local);
-      const { items } = await store.getChildren('/fed');
+      const tree = withMounts(local);
+      const { items } = await tree.getChildren('/fed');
 
       assert.equal(items.length, 2);
       const paths = items.map(n => n.$path).sort();

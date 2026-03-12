@@ -272,13 +272,11 @@ export function NodeEditor({ node, open, onClose, currentUserId, toast, onAddCom
             )}
           </>
         ) : (
-          <div className="relative bg-background rounded-md overflow-hidden">
-            <textarea
-              value={snap.jsonText}
-              onChange={(e) => { st.jsonText = e.target.value; st.dirty = true; }}
-              spellCheck={false}
-            />
-          </div>
+          <textarea
+            value={snap.jsonText}
+            onChange={(e) => { st.jsonText = e.target.value; st.dirty = true; }}
+            spellCheck={false}
+          />
         )}
         </div>
       </ScrollArea>

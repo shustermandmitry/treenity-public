@@ -7,7 +7,7 @@ register('ticker', 'service', async (node: NodeData, ctx) => {
 
   const timer = setInterval(async () => {
     const price = 50000 + Math.random() * 1000; // stub — replace with real API
-    await ctx.store.set({
+    await ctx.tree.set({
       $path: `${node.$path}/${Date.now()}`,
       $type: 'ticker.price',
       price,

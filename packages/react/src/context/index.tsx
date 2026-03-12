@@ -30,7 +30,7 @@ export function RenderContext({ name, children }: { name: string; children: Reac
 
 const NodeCtx = createContext<NodeData | null>(null);
 
-export function NodeProvider({ value, children }: { value: NodeData | null; children: ReactNode }) {
+export function NodeProvider({ value, children }: { value: NodeData | null; children?: ReactNode }) {
   if (!value?.$path) return null;
   return <NodeCtx.Provider value={value}>{children}</NodeCtx.Provider>;
 }
@@ -138,7 +138,8 @@ export function Render({ value, onChange }: RenderProps) {
   if (!Handler) return null;
 
   const ctx = viewCtx(value);
-  return createElement(Handler, { value, onChange, ctx });
+  const el = createElement(Handler, { value, onChange, ctx });
+  return ctx?.node ? createElement(NodeProvider, { value: ctx.node }, el) : el;
 }
 
 // ── <RenderField> — field-level rendering by type name ──

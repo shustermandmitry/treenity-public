@@ -210,7 +210,7 @@ export class IfElseAction {
 
   async run(bCtx: BrahmanCtx) {
     const { format, executeAction, StopProcess } = await import('./helpers');
-    const { store } = bCtx;
+    const { tree } = bCtx;
     const session = bCtx.session;
 
     let result = false;
@@ -223,7 +223,7 @@ export class IfElseAction {
 
     const target = result ? this.actionIf : this.actionElse;
     if (target) {
-      const targetNode = await store.get(target);
+      const targetNode = await tree.get(target);
       if (targetNode) await executeAction(targetNode, bCtx);
     }
 
@@ -268,7 +268,7 @@ export class TagAction {
 
   async run(bCtx: BrahmanCtx) {
     const { format } = await import('./helpers');
-    const { store } = bCtx;
+    const { tree } = bCtx;
     const session = bCtx.session;
 
     if (!this.tag) return;
@@ -291,7 +291,7 @@ export class TagAction {
     const userComp = getComponent(bCtx.user, BrahmanUser);
     if (userComp) {
       (userComp as any).tags = tags;
-      await store.set(bCtx.user);
+      await tree.set(bCtx.user);
     }
   }
 }
@@ -306,13 +306,13 @@ export class BroadcastAction {
 
   async run(bCtx: BrahmanCtx) {
     const { checkTags, executeAction } = await import('./helpers');
-    const { store, lang } = bCtx;
+    const { tree, lang } = bCtx;
 
     if (!this.action) return;
-    const actionNode = await store.get(this.action);
+    const actionNode = await tree.get(this.action);
     if (!actionNode) return;
 
-    const { items: users } = await store.getChildren(`${bCtx.botPath}/users`);
+    const { items: users } = await tree.getChildren(`${bCtx.botPath}/users`);
     const filterTags = this.userTags ?? [];
 
     for (const userNode of users) {
@@ -327,7 +327,7 @@ export class BroadcastAction {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('403') || msg.includes('Forbidden')) {
           (userData as any).blocked = true;
-          await store.set(userNode);
+          await tree.set(userNode);
         }
       }
     }
@@ -356,7 +356,7 @@ export class GetValueAction {
 }
 registerType('brahman.action.getvalue', GetValueAction);
 
-/** Write session value — store data in user session */
+/** Write session value — tree data in user session */
 export class SetValueAction {
   /** @title Value expression */
   value = '';
@@ -423,11 +423,11 @@ export class FileAction {
 
   async run(bCtx: BrahmanCtx) {
     const { format } = await import('./helpers');
-    const { ctx, store } = bCtx;
+    const { ctx, tree } = bCtx;
 
     if (!this.fileId) return;
     const resolvedId = format(this.fileId, bCtx);
-    const fileNode = await store.get(resolvedId);
+    const fileNode = await tree.get(resolvedId);
     const fileId = (fileNode as any)?.fileId ?? resolvedId;
     const asType = this.asType || 'document';
 
@@ -450,15 +450,15 @@ export class EvalAction {
   value = '';
 
   async run(bCtx: BrahmanCtx) {
-    const { ctx, store } = bCtx;
+    const { ctx, tree } = bCtx;
     const session = bCtx.session;
 
     if (!this.value) return;
     try {
-      const fn = new Function('ctx', 'session', 'data', 'user', 'store',
+      const fn = new Function('ctx', 'session', 'data', 'user', 'tree',
         `return (async function() { ${this.value} }).call(null)`);
       const userData = getComponent(bCtx.user, BrahmanUser);
-      await fn(ctx, session, session, userData, store);
+      await fn(ctx, session, session, userData, tree);
     } catch (err) {
       console.error(`[brahman:eval]`, err);
       throw err;
@@ -488,7 +488,7 @@ export class EmitTextAction {
 
   async run(bCtx: BrahmanCtx) {
     const { format, executePage } = await import('./helpers');
-    const { store } = bCtx;
+    const { tree } = bCtx;
     const session = bCtx.session;
 
     if (!this.from) return;
@@ -497,7 +497,7 @@ export class EmitTextAction {
 
     if (text.startsWith('/')) {
       const cmd = text.slice(1).split(/\s/)[0];
-      const { items: pages } = await store.getChildren(`${bCtx.botPath}/pages`);
+      const { items: pages } = await tree.getChildren(`${bCtx.botPath}/pages`);
       const page = pages.find(p => {
         const pc = getComponent(p, PageConfig);
         return pc?.command === `/${cmd}` || pc?.command === cmd;
@@ -579,7 +579,7 @@ export class OnErrorAction {
 
   async run(bCtx: BrahmanCtx) {
     const { executeAction } = await import('./helpers');
-    const { store } = bCtx;
+    const { tree } = bCtx;
     const session = bCtx.session;
 
     const errorInfo = session.error as { message?: string } | undefined;
@@ -588,7 +588,7 @@ export class OnErrorAction {
     if (this.error && !errorInfo.message.includes(this.error)) return;
 
     if (this.action) {
-      const actionNode = await store.get(this.action);
+      const actionNode = await tree.get(this.action);
       if (actionNode) await executeAction(actionNode, bCtx);
     }
   }
@@ -611,7 +611,7 @@ export class KeywordSelectAction {
 
   async run(bCtx: BrahmanCtx) {
     const { format, executePage } = await import('./helpers');
-    const { ctx, store } = bCtx;
+    const { ctx, tree } = bCtx;
     const session = bCtx.session;
 
     const sourceText = this.textFrom
@@ -625,7 +625,7 @@ export class KeywordSelectAction {
       if (match && el.message) {
         if (el.message.startsWith('/')) {
           const cmd = el.message.slice(1);
-          const { items: pages } = await store.getChildren(`${bCtx.botPath}/pages`);
+          const { items: pages } = await tree.getChildren(`${bCtx.botPath}/pages`);
           const page = pages.find(p => {
             const pc = getComponent(p, PageConfig);
             return pc?.command === `/${cmd}` || pc?.command === cmd;
@@ -672,7 +672,7 @@ export class CallAction {
     }
 
     const result = await executeAction(
-      bCtx.store, path,
+      bCtx.tree, path,
       this.type || undefined,
       this.key || undefined,
       this.action, data,

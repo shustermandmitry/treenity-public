@@ -30,8 +30,8 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
   const dirs = ['pages', 'users', 'sessions'];
   for (const d of dirs) {
     const dirPath = `${botPath}/${d}`;
-    if (!(await svcCtx.store.get(dirPath))) {
-      await svcCtx.store.set({ $path: dirPath, $type: 'dir' } as NodeData);
+    if (!(await svcCtx.tree.get(dirPath))) {
+      await svcCtx.tree.set({ $path: dirPath, $type: 'dir' } as NodeData);
     }
   }
 
@@ -49,18 +49,18 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
 
     // Load/create session
     const sessionPath = `${botPath}/sessions/${userId}`;
-    let sessionNode = await svcCtx.store.get(sessionPath);
+    let sessionNode = await svcCtx.tree.get(sessionPath);
     if (!sessionNode) {
       sessionNode = {
         $path: sessionPath, $type: 'brahman.session',
         tid: userId, data: {}, history: [], callbacks: {},
       } as NodeData;
-      await svcCtx.store.set(sessionNode);
+      await svcCtx.tree.set(sessionNode);
     }
 
     // Load/create user
     const userPath = `${botPath}/users/${userId}`;
-    let userNode = await svcCtx.store.get(userPath);
+    let userNode = await svcCtx.tree.get(userPath);
     if (!userNode) {
       userNode = {
         $path: userPath, $type: 'brahman.user',
@@ -71,7 +71,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
         lang: gCtx.from.language_code ?? defaultLang,
         isAdmin: false, blocked: false, banned: false, tags: [],
       } as NodeData;
-      await svcCtx.store.set(userNode);
+      await svcCtx.tree.set(userNode);
     }
 
     const userData = getComponent(userNode, BrahmanUser);
@@ -80,7 +80,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
     // Mark as unblocked if previously blocked (user restarted bot)
     if (userData?.blocked) {
       (userData as any).blocked = false;
-      await svcCtx.store.set(userNode);
+      await svcCtx.tree.set(userNode);
     }
 
     const sessionComp = getComponent(sessionNode, BrahmanSession);
@@ -88,7 +88,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
     if (!sessionData.history) sessionData.history = (sessionComp as any)?.history ?? [];
 
     const bCtx: BrahmanCtx = {
-      ctx: gCtx, store: svcCtx.store,
+      ctx: gCtx, tree: svcCtx.tree,
       session: sessionData,
       sessionNode,
       user: userNode,
@@ -111,13 +111,13 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
       history: sessionData.history ?? [],
       callbacks: sessionData.callbacks ?? {},
     });
-    await svcCtx.store.set(sessionNode);
+    await svcCtx.tree.set(sessionNode);
   });
 
   // ── Dynamic page lookup (pages can be added/changed at runtime) ──
 
   async function getPages() {
-    const { items } = await svcCtx.store.getChildren(`${botPath}/pages`, { depth: 10 });
+    const { items } = await svcCtx.tree.getChildren(`${botPath}/pages`, { depth: 10 });
     return items.filter(n => n.$type === 'brahman.page');
   }
 
@@ -153,7 +153,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
       const btnId = parseInt(data.slice(4), 10);
       const lastMenuPath = bCtx.session._lastMenu as string | undefined;
       if (lastMenuPath) {
-        const menuNode = await svcCtx.store.get(lastMenuPath);
+        const menuNode = await svcCtx.tree.get(lastMenuPath);
         const menuComp = menuNode ? findActionComp(menuNode) as any : null;
         if (menuComp?.rows) {
           for (const row of menuComp.rows) {
@@ -162,7 +162,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
                 if (btn.action.type === 'brahman.action.page' && btn.action.target) {
                   await executePage(btn.action.target, bCtx);
                 } else if (btn.action.target) {
-                  const actionNode = await svcCtx.store.get(btn.action.target);
+                  const actionNode = await svcCtx.tree.get(btn.action.target);
                   if (actionNode) await executeAction(actionNode, bCtx);
                 }
               }
@@ -176,7 +176,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
         const userData = getComponent(bCtx.user, BrahmanUser);
         if (userData) {
           (userData as any).lang = newLang;
-          await svcCtx.store.set(bCtx.user);
+          await svcCtx.tree.set(bCtx.user);
           bCtx.lang = newLang;
         }
         bCtx.session.langSelected = newLang;
@@ -212,9 +212,9 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
     const history = (bCtx.session.history ?? []) as string[];
     if (history.length > 0) {
       const lastPagePath = history[history.length - 1];
-      const pageNode = await svcCtx.store.get(lastPagePath);
+      const pageNode = await svcCtx.tree.get(lastPagePath);
       if (pageNode) {
-        const { items: children } = await svcCtx.store.getChildren(lastPagePath + '/_actions');
+        const { items: children } = await svcCtx.tree.getChildren(lastPagePath + '/_actions');
         for (const child of children) {
           const actionComp = findActionComp(child) as any;
           if (!actionComp) continue;
@@ -227,7 +227,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
                     await executePage(btn.action.target, bCtx);
                     return;
                   } else if (btn.action.target) {
-                    const actionNode = await svcCtx.store.get(btn.action.target);
+                    const actionNode = await svcCtx.tree.get(btn.action.target);
                     if (actionNode) await executeAction(actionNode, bCtx);
                     return;
                   }
@@ -242,7 +242,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
     // Fallback: check _lastMenu for backward compat
     const lastMenuPath = bCtx.session._lastMenu as string | undefined;
     if (lastMenuPath) {
-      const menuNode = await svcCtx.store.get(lastMenuPath);
+      const menuNode = await svcCtx.tree.get(lastMenuPath);
       const menuComp = menuNode ? findActionComp(menuNode) as any : null;
       if (menuComp?.menuType === 'keyboard' && menuComp.rows) {
         for (const row of menuComp.rows) {
@@ -276,8 +276,8 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
     if (info.username && !config.alias) updates.alias = `@${info.username}`;
     if (info.first_name && !config.name) updates.name = info.first_name;
     if (Object.keys(updates).length > 0) {
-      const fresh = await svcCtx.store.get(botPath);
-      if (fresh) await svcCtx.store.set({ ...fresh, ...updates });
+      const fresh = await svcCtx.tree.get(botPath);
+      if (fresh) await svcCtx.tree.set({ ...fresh, ...updates });
     }
   }
 
@@ -289,7 +289,7 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
 
   // React to start/stop actions toggling the running flag
   const unsub = svcCtx.subscribe(botPath, async () => {
-    const fresh = await svcCtx.store.get(botPath);
+    const fresh = await svcCtx.tree.get(botPath);
     if (!fresh) return;
     const cfg = getComponent(fresh, BotConfig);
     const shouldRun = cfg?.running !== false;
@@ -316,13 +316,13 @@ register('brahman.bot', 'service', async (node: NodeData, svcCtx: ServiceCtx): P
 register('brahman.bot', 'action:start', async (ctx: ActionCtx) => {
   await ctx.nc('/sys/autostart').get(Autostart).start({ path: ctx.node.$path });
   // Set running flag — service subscription reacts and calls bot.start()
-  const fresh = await ctx.store.get(ctx.node.$path);
-  if (fresh) await ctx.store.set({ ...fresh, running: true });
+  const fresh = await ctx.tree.get(ctx.node.$path);
+  if (fresh) await ctx.tree.set({ ...fresh, running: true });
 });
 
 /** @description Stop the Telegram bot polling loop via autostart service */
 register('brahman.bot', 'action:stop', async (ctx: ActionCtx) => {
   await ctx.nc('/sys/autostart').get(Autostart).stop({ path: ctx.node.$path });
-  const fresh = await ctx.store.get(ctx.node.$path);
-  if (fresh) await ctx.store.set({ ...fresh, running: false });
+  const fresh = await ctx.tree.get(ctx.node.$path);
+  if (fresh) await ctx.tree.set({ ...fresh, running: false });
 });

@@ -1,5 +1,5 @@
 // Treenity Mods Mount — Layer 4
-// Virtual read-only store exposing loaded mods as rich catalog nodes.
+// Virtual read-only tree exposing loaded mods as rich catalog nodes.
 // Sources: mod loader (all loaded mods) + tracking + TypeCatalog + prefab registry.
 //
 // Tree structure:

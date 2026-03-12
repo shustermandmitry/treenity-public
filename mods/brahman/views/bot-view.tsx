@@ -1,6 +1,7 @@
 // Bot view — read-only display of bot config + pages list
 
 import type { NodeData } from '@treenity/core';
+import { Badge } from '@treenity/react/components/ui/badge';
 import { Render, RenderContext } from '@treenity/react/context';
 import { useChildren } from '@treenity/react/hooks';
 import { Bot } from 'lucide-react';
@@ -31,9 +32,9 @@ export function BotView({ value }: { value: NodeData }) {
           <div className="text-lg font-semibold">{bot.name || bot.alias || 'Untitled Bot'}</div>
           <div className="flex items-center gap-2">
             {bot.alias && <span className="text-sm text-muted-foreground">{bot.alias}</span>}
-            <span className={`text-xs px-1.5 py-0.5 rounded ${isActive ? 'bg-green-500/10 text-green-600' : 'bg-yellow-500/10 text-yellow-600'}`}>
+            <Badge variant={isActive ? 'default' : 'secondary'} className={isActive ? 'bg-green-500/10 text-green-600 hover:bg-green-500/10' : 'bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/10'}>
               {isActive ? 'Active' : 'Maintenance'}
-            </span>
+            </Badge>
           </div>
         </div>
       </div>

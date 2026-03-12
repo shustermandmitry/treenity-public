@@ -1,5 +1,5 @@
 // Treenity Volatile Nodes — Layer 3
-// Nodes with $volatile go to memory, rest to backing store.
+// Nodes with $volatile go to memory, rest to backing tree.
 // Cascade: $volatile on instance > register(type, 'volatile') > false
 
 import { type NodeData, resolve as resolveHandler } from '#core';
@@ -27,6 +27,6 @@ export function extractPaths(result: unknown): string[] {
   return [];
 }
 
-export function withVolatile(store: Tree): Tree {
-  return createFilterTree(createMemoryTree(), store, isVolatile);
+export function withVolatile(tree: Tree): Tree {
+  return createFilterTree(createMemoryTree(), tree, isVolatile);
 }

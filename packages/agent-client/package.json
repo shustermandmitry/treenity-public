@@ -1,14 +1,44 @@
 {
   "name": "@treenity/agent-client",
   "version": "1.0.0",
-  "type": "module",
   "description": "Treenity agent client — TOFU connection to a Treenity server",
+  "type": "module",
+  "publishConfig": { "access": "public" },
+  "license": "AGPL-3.0",
+  "author": "Treenity <hello@treenity.ai> (https://treenity.ai)",
+  "homepage": "https://github.com/treenity-ai/treenity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treenity-ai/treenity.git",
+    "directory": "packages/agent-client"
+  },
+  "keywords": ["treenity", "agent", "client", "tofu", "ai-native"],
   "imports": {
-    "#*": "./src/*.ts"
+    "#*": {
+      "development": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
   },
   "exports": {
-    ".":   "./src/index.ts",
-    "./*": "./src/*"
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "development": "./src/*.ts",
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
   },
   "peerDependencies": {
     "@treenity/core": "^3.0.0"

@@ -1,4 +1,4 @@
-// withRefIndex — store combinator that auto-populates $refs on set()
+// withRefIndex — tree combinator that auto-populates $refs on set()
 // Scans node fields for { $ref } entries, builds $refs array.
 // Standalone refs (no f:) pass through untouched.
 

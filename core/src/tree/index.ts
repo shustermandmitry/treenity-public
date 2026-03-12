@@ -34,14 +34,14 @@ export interface Tree {
 
 // ── Ref resolution ──
 
-export async function resolveRef(store: Tree, node: NodeData): Promise<NodeData> {
+export async function resolveRef(tree: Tree, node: NodeData): Promise<NodeData> {
   if (!isRef(node)) return node;
-  const target = await store.get((node as unknown as Ref).$ref);
+  const target = await tree.get((node as unknown as Ref).$ref);
   if (!target) throw new Error(`Ref not found: ${(node as unknown as Ref).$ref}`);
   return target;
 }
 
-// ── Filter store ──
+// ── Filter tree ──
 // Like overlay, but set() routes to upper only when filter matches, else lower.
 // Reads merge both layers (upper wins). Remove tries both.
 // NOTE: limit/offset pagination is approximate — merging happens after both stores paginate.
@@ -65,7 +65,7 @@ export function createFilterTree(
       for (const n of l.items) byPath.set(n.$path, n);
       for (const n of u.items) byPath.set(n.$path, n);
       const result = paginate([...byPath.values()], opts);
-      // Forward queryMount from lower store (mount system → CDC Matrix)
+      // Forward queryMount from lower tree (mount system → CDC Matrix)
       if (l.queryMount) result.queryMount = l.queryMount;
       return result;
     },
@@ -87,7 +87,7 @@ export function createFilterTree(
   };
 }
 
-// ── Overlay store ──
+// ── Overlay tree ──
 // Reads: upper first, fall back to lower. Writes: upper only.
 // Like createFilterTree(upper, lower, () => true) but remove only affects upper.
 
@@ -164,7 +164,7 @@ export function createMemoryTree(): Tree {
 
   return {
     async get(path, _ctx) {
-      if (typeof path !== 'string') throw new Error(`store.get: path must be string, got ${typeof path}`);
+      if (typeof path !== 'string') throw new Error(`tree.get: path must be string, got ${typeof path}`);
       const data = navigate(path)?.data;
       return data ? structuredClone(data) : data;
     },

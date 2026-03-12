@@ -1,8 +1,9 @@
 // Treenity HTTP Server — Layer 5
-// createPipeline: pure store composition (no HTTP).
+// createPipeline: pure tree composition (no HTTP).
 // createHttpServer: HTTP + CORS + tRPC + static serving.
 // createTreenityServer: backward-compat (pipeline + HTTP in one call).
 
+import { createLogger } from '#log';
 import type { Tree } from '#tree';
 import { withCache } from '#tree/cache';
 import { nodeHTTPRequestHandler } from '@trpc/server/adapters/node-http';
@@ -11,31 +12,30 @@ import { createServer, type Server } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { resolveToken } from './auth';
 import { withMounts } from './mount';
+import { withRefIndex } from './refs';
 import type { ReactiveTree } from './sub';
 import { unwatchAllQueries, withSubscriptions } from './sub';
 import { createTreeRouter, type TreeRouter, type TrpcContext } from './trpc';
-import { withRefIndex } from './refs';
 import { withValidation } from './validate';
 import { withVolatile } from './volatile';
 import { createWatchManager, type WatchManager } from './watch';
-import { createLogger } from '#log';
 
 const log = createLogger('http');
 
-export type RouteHandler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, store: Tree) => Promise<void>;
+export type RouteHandler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, tree: Tree) => Promise<void>;
 
 // Dynamic route registry — services register/unregister routes at runtime
 export const routeRegistry = new Map<string, RouteHandler>();
 
 export type Pipeline = {
-  store: ReactiveTree;
+  tree: ReactiveTree;
   mountable: Tree;
   watcher: WatchManager;
   router: TreeRouter;
   createContext: (token: string | null) => Promise<TrpcContext>;
 };
 
-/** Pure store composition — no HTTP, no side effects */
+/** Pure tree composition — no HTTP, no side effects */
 export function createPipeline(bootstrap: Tree): Pipeline {
   const mountable = withMounts(bootstrap);
   const volatile = withVolatile(mountable);
@@ -45,15 +45,15 @@ export function createPipeline(bootstrap: Tree): Pipeline {
   const watcher = createWatchManager({
     onUserRemoved: (userId) => unwatchAllQueries(userId),
   });
-  const store = withSubscriptions(cached, (e) => watcher.notify(e));
-  const router = createTreeRouter(store, watcher);
+  const tree = withSubscriptions(cached, (e) => watcher.notify(e));
+  const router = createTreeRouter(tree, watcher);
 
   const createContext = async (token: string | null): Promise<TrpcContext> => {
     const session = token ? await resolveToken(mountable, token) : null;
     return { session, token };
   };
 
-  return { store, mountable, watcher, router, createContext };
+  return { tree, mountable, watcher, router, createContext };
 }
 
 type HttpServerOpts = {
@@ -63,7 +63,7 @@ type HttpServerOpts = {
 
 /** HTTP server on top of an existing pipeline */
 export function createHttpServer(pipeline: Pipeline, opts?: HttpServerOpts): Server {
-  const { store, mountable, router } = pipeline;
+  const { tree, mountable, router } = pipeline;
   const allowedOrigins = opts?.allowedOrigins
     ?? (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',');
   const staticDir = opts?.staticDir
@@ -129,7 +129,7 @@ export function createHttpServer(pipeline: Pipeline, opts?: HttpServerOpts): Ser
     const pathname = (req.url ?? '/').split('?')[0];
     const handler = routeRegistry.get(pathname);
     if (handler) {
-      return handler(req, res, store);
+      return handler(req, res, tree);
     }
 
     // tRPC routes

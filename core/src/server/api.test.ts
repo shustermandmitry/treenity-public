@@ -1,5 +1,5 @@
 // Integration tests — full tRPC API from client perspective.
-// Builds the real store pipeline (memory → mountable → volatile → validated → subscriptions),
+// Builds the real tree pipeline (memory → mountable → volatile → validated → subscriptions),
 // exercises every operation, verifies ACL, events, CDC Matrix, and OpError mapping.
 
 import { registerType } from '#comp';
@@ -58,13 +58,13 @@ describe('tRPC API integration', () => {
     const validated = withValidation(volatile);
     watcher = createWatchManager();
     events = [];
-    const store = withSubscriptions(validated, (e) => {
+    const tree = withSubscriptions(validated, (e) => {
       events.push(e as DataEvent);
       watcher.notify(e);
     });
-    rawStore = store;
+    rawStore = tree;
 
-    const router = createTreeRouter(store as any, watcher);
+    const router = createTreeRouter(tree as any, watcher);
     caller = router.createCaller({ session: null, token: null });
     authedCaller = router.createCaller({ session: { userId: 'alice' } as Session, token: null });
   });
@@ -127,7 +127,7 @@ describe('tRPC API integration', () => {
     });
 
     it('CONFLICT on stale $rev', async () => {
-      // Blind upsert (no $rev) — store auto-assigns $rev: 1
+      // Blind upsert (no $rev) — tree auto-assigns $rev: 1
       await caller.set({ node: { $path: '/rev', $type: 'doc', x: { $type: 'x' } } });
       await assert.rejects(
         () => caller.setComponent({ path: '/rev', name: 'x', data: { $type: 'x' }, rev: 99 }),

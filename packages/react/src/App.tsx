@@ -183,12 +183,8 @@ export function App() {
   }, [showToast]);
 
   const loadChildren = useCallback(async (path: string) => {
-    const { items: children } = (await trpc.getChildren.query({
-      path,
-      watch: true,
-      watchNew: true,
-    })) as { items: NodeData[]; total: number };
-    cache.putMany(children, path); // Use specific parent path so query mounts index them correctly
+    const { items: children } = await tree.getChildren(path);
+    cache.putMany(children, path);
     setLoaded((prev) => new Set(prev).add(path));
   }, []);
 
@@ -352,7 +348,7 @@ export function App() {
     [loadChildren, showToast],
   );
 
-  const roots = hasRootNode ? [root] : [];
+  const roots = hasRootNode ? [root, '/local'] : ['/local'];
 
   const [rootPromptOpen, setRootPromptOpen] = useState(false);
   const [rootPromptType, setRootPromptType] = useState('root');
@@ -443,7 +439,7 @@ export function App() {
   return (
     <NavigateProvider value={navigate}>
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      <ResizablePanelGroup direction="horizontal" className="h-full">
+      <ResizablePanelGroup orientation="horizontal" className="h-full">
         <ResizablePanel
           defaultSize={28}
           minSize={150}

@@ -68,7 +68,7 @@ describe('QueryStore', () => {
     assert.equal(page.total, 5);
   });
 
-  it('get delegates to parent store', async () => {
+  it('get delegates to parent tree', async () => {
     const parent = createMemoryTree();
     await parent.set(createNode('/items/a', 'item'));
 
@@ -78,7 +78,7 @@ describe('QueryStore', () => {
     assert.equal(node?.$type, 't.item');
   });
 
-  it('set delegates to parent store', async () => {
+  it('set delegates to parent tree', async () => {
     const parent = createMemoryTree();
     const qs = createQueryTree({ source: '/items', match: {} }, parent);
     await qs.set(createNode('/items/new', 'item'));
@@ -86,7 +86,7 @@ describe('QueryStore', () => {
     assert.equal((await parent.get('/items/new'))?.$type, 't.item');
   });
 
-  it('remove delegates to parent store', async () => {
+  it('remove delegates to parent tree', async () => {
     const parent = createMemoryTree();
     await parent.set(createNode('/items/a', 'item'));
 

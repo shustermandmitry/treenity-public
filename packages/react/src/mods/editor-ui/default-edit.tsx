@@ -1,3 +1,5 @@
+import { Checkbox } from '#components/ui/checkbox';
+import { Input } from '#components/ui/input';
 import { useSchema } from '#schema-loader';
 import { type ComponentData, isRef, register, resolve } from '@treenity/core';
 import { createElement } from 'react';
@@ -57,12 +59,12 @@ function DefaultEditForm({ value, onChange }: { value: ComponentData; onChange?:
               <FieldLabel label={k} value={v} onChange={onCh} />
               {typeof v === 'boolean' ? (
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={!!data[k]} className="w-auto"
-                    onChange={(e) => setData((prev) => ({ ...prev, [k]: e.target.checked }))} />
+                  <Checkbox checked={!!data[k]}
+                    onChange={(e) => setData((prev) => ({ ...prev, [k]: (e.target as HTMLInputElement).checked }))} />
                   {data[k] ? 'true' : 'false'}
                 </label>
               ) : typeof v === 'number' ? (
-                <input type="number" value={String(data[k] ?? 0)}
+                <Input type="number" className="h-7 text-xs" value={String(data[k] ?? 0)}
                   onChange={(e) => setData((prev) => ({ ...prev, [k]: Number(e.target.value) }))} />
               ) : Array.isArray(v) ? (
                 <StringArrayField value={data[k] as unknown[]}
@@ -78,7 +80,7 @@ function DefaultEditForm({ value, onChange }: { value: ComponentData; onChange?:
                     : <pre className="text-[11px] font-mono text-foreground/60">{JSON.stringify(data[k], null, 2)}</pre>;
                 })()
               ) : (
-                <input value={String(data[k] ?? '')}
+                <Input className="h-7 text-xs" value={String(data[k] ?? '')}
                   onChange={(e) => setData((prev) => ({ ...prev, [k]: e.target.value }))} />
               )}
             </div>

@@ -51,22 +51,26 @@ function EditOverlay({
 }) {
   return (
     <>
-      <button
-        className="launcher-btn absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-red-700 shadow-lg p-0"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="launcher-btn absolute -right-1 -top-1 z-10 h-5 w-5 rounded-full bg-red-700 p-0 hover:bg-red-600"
         onClick={(e) => { e.stopPropagation(); onRemove(); }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <X className="h-3 w-3 text-white" />
-      </button>
+      </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            className="launcher-btn absolute -left-1 -top-1 z-10 flex h-auto min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 shadow-lg text-[9px] font-medium text-white"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="launcher-btn absolute -left-1 -top-1 z-10 h-auto min-w-5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-medium text-white hover:bg-blue-500"
             onMouseDown={(e) => e.stopPropagation()}
           >
             {contextLabel(ctx)}
-          </button>
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-24">
           {CONTEXTS.map((c) => (
@@ -112,8 +116,8 @@ function AppItem({
 
   if (!target) {
     return (
-      <div className="flex h-full w-full items-center justify-center rounded-2xl bg-zinc-700/50">
-        <span className="text-xs text-zinc-400">...</span>
+      <div className="flex h-full w-full items-center justify-center rounded-2xl bg-muted/50">
+        <span className="text-xs text-muted-foreground">...</span>
       </div>
     );
   }

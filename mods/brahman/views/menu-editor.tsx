@@ -15,40 +15,14 @@ import { arrayMove, horizontalListSortingStrategy, SortableContext, useSortable 
 import { CSS } from '@dnd-kit/utilities';
 import { Badge } from '@treenity/react/components/ui/badge';
 import { Button } from '@treenity/react/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@treenity/react/components/ui/dialog';
 import { Input } from '@treenity/react/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@treenity/react/components/ui/select';
 import { trpc } from '@treenity/react/trpc';
 import { ArrowRight, Plus, X } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { ACTION_TYPES, MENU_TYPES, type MenuButton, type MenuRow, type MenuType, type TString } from '../types';
 import { TStringLineInput, tstringPreview } from './tstring-input';
-
-// ── Modal (lightweight, no radix dependency) ──
-
-function Modal({ open, onClose, title, children }: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  if (!open) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-background border border-border rounded-lg shadow-lg w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-4 space-y-4">{children}</div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
 
 // ── Tag editor (for button tags) ──
 
@@ -107,56 +81,66 @@ function ButtonEditModal({
   }
 
   return (
-    <Modal open title="Edit Button" onClose={onClose}>
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">Title</label>
-          <TStringLineInput value={draft.title} onChange={t => update('title', t)} langs={langs} />
+    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Button</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Title</label>
+            <TStringLineInput value={draft.title} onChange={t => update('title', t)} langs={langs} />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">URL (optional)</label>
+            <Input className="h-8 text-sm" placeholder="https://..."
+              value={draft.url ?? ''} onChange={e => update('url', e.target.value || undefined)} />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Tags</label>
+            <TagEditor tags={draft.tags ?? []} onChange={t => update('tags', t)} />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Button action</label>
+            <Select
+              value={draft.action?.type ?? ''}
+              onValueChange={v => {
+                if (!v) { update('action', undefined); return; }
+                update('action', { type: v });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full">
+                <SelectValue placeholder="No action" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No action</SelectItem>
+                {ACTION_TYPES.map(at => (
+                  <SelectItem key={at.type} value={at.type}>{at.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {draft.action?.type === 'brahman.action.page' && (
+              <Input className="h-8 text-sm mt-1" placeholder="Target page path"
+                value={(draft.action.target as string) ?? ''}
+                onChange={e => update('action', { ...draft.action!, target: e.target.value })} />
+            )}
+          </div>
         </div>
 
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">URL (optional)</label>
-          <Input className="h-8 text-sm" placeholder="https://..."
-            value={draft.url ?? ''} onChange={e => update('url', e.target.value || undefined)} />
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">Tags</label>
-          <TagEditor tags={draft.tags ?? []} onChange={t => update('tags', t)} />
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">Button action</label>
-          <select
-            className="w-full h-8 text-sm border border-border rounded-md bg-background px-2"
-            value={draft.action?.type ?? ''}
-            onChange={e => {
-              if (!e.target.value) { update('action', undefined); return; }
-              update('action', { type: e.target.value });
-            }}
-          >
-            <option value="">No action</option>
-            {ACTION_TYPES.map(at => (
-              <option key={at.type} value={at.type}>{at.label}</option>
-            ))}
-          </select>
-
-          {draft.action?.type === 'brahman.action.page' && (
-            <Input className="h-8 text-sm mt-1" placeholder="Target page path"
-              value={(draft.action.target as string) ?? ''}
-              onChange={e => update('action', { ...draft.action!, target: e.target.value })} />
-          )}
-        </div>
-      </div>
-
-      <div className="flex justify-between pt-2">
-        <Button variant="destructive" size="sm" onClick={onDelete}>Delete</Button>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={() => { onSave(draft); onClose(); }}>Save</Button>
-        </div>
-      </div>
-    </Modal>
+        <DialogFooter>
+          <Button variant="destructive" size="sm" onClick={onDelete}>Delete</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={() => { onSave(draft); onClose(); }}>Save</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -354,15 +338,16 @@ export function MenuEditor({ menuType = 'none', rows = [], langs, onChangeType, 
       {/* Menu type selector */}
       <div className="flex items-center gap-3">
         <label className="text-xs font-medium text-muted-foreground w-20">Menu type</label>
-        <select
-          className="flex-1 h-8 text-sm border border-border rounded-md bg-background px-2"
-          value={menuType}
-          onChange={e => onChangeType(e.target.value as MenuType)}
-        >
-          {MENU_TYPES.map(mt => (
-            <option key={mt.value} value={mt.value}>{mt.label}</option>
-          ))}
-        </select>
+        <Select value={menuType} onValueChange={v => onChangeType(v as MenuType)}>
+          <SelectTrigger size="sm" className="flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MENU_TYPES.map(mt => (
+              <SelectItem key={mt.value} value={mt.value}>{mt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Rows & buttons grid */}
@@ -409,14 +394,15 @@ export function MenuEditor({ menuType = 'none', rows = [], langs, onChangeType, 
                     </div>
                   </SortableContext>
 
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="p-1 h-auto"
                     onClick={() => addButton(ri)}
-                    className="p-1 text-muted-foreground hover:text-foreground"
                     title="Add button to row"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

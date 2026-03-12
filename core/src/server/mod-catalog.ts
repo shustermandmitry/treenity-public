@@ -1,5 +1,5 @@
 // Mod Catalog — synthesizes rich mod info from loader + tracking + TypeCatalog + prefabs
-// Pure functions, no store deps.
+// Pure functions, no tree deps.
 
 import { getLoadedMods } from '#mod/loader';
 import { getModPrefabs, getRegisteredMods } from '#mod/prefab';

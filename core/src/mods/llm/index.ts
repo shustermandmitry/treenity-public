@@ -38,7 +38,7 @@ export async function describeTree(ctx: ActionCtx, data: unknown): Promise<strin
 
   async function walk(p: string, indent: number, remaining: number): Promise<void> {
     if (remaining <= 0) return;
-    const { items } = await ctx.store.getChildren(p);
+    const { items } = await ctx.tree.getChildren(p);
     items.sort((a, b) => a.$path.localeCompare(b.$path));
     for (const child of items) {
       lines.push(`${'  '.repeat(indent)}${basename(child.$path)} (${child.$type})`);

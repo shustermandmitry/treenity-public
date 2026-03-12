@@ -57,15 +57,15 @@ describe('pre/post action conditions', () => {
   afterEach(() => clearRegistry());
 
   it('warns when @pre fields are empty', async () => {
-    const store = createMemoryTree();
-    await store.set({ ...createNode('/t/1', 'test.ticket'), status: '', assignee: '' });
+    const tree = createMemoryTree();
+    await tree.set({ ...createNode('/t/1', 'test.ticket'), status: '', assignee: '' });
 
     const warnings: string[] = [];
     const orig = console.warn;
     console.warn = (...args: any[]) => warnings.push(args.join(' '));
 
     try {
-      await executeAction(store, '/t/1', undefined, undefined, 'close');
+      await executeAction(tree, '/t/1', undefined, undefined, 'close');
     } finally {
       console.warn = orig;
     }
@@ -75,15 +75,15 @@ describe('pre/post action conditions', () => {
   });
 
   it('no pre warning when fields are filled', async () => {
-    const store = createMemoryTree();
-    await store.set({ ...createNode('/t/2', 'test.ticket'), status: 'open', assignee: 'alice' });
+    const tree = createMemoryTree();
+    await tree.set({ ...createNode('/t/2', 'test.ticket'), status: 'open', assignee: 'alice' });
 
     const warnings: string[] = [];
     const orig = console.warn;
     console.warn = (...args: any[]) => warnings.push(args.join(' '));
 
     try {
-      await executeAction(store, '/t/2', undefined, undefined, 'close');
+      await executeAction(tree, '/t/2', undefined, undefined, 'close');
     } finally {
       console.warn = orig;
     }
@@ -92,15 +92,15 @@ describe('pre/post action conditions', () => {
   });
 
   it('warns when @post fields are unchanged', async () => {
-    const store = createMemoryTree();
-    await store.set({ ...createNode('/t/3', 'test.ticket'), status: 'open', assignee: 'bob' });
+    const tree = createMemoryTree();
+    await tree.set({ ...createNode('/t/3', 'test.ticket'), status: 'open', assignee: 'bob' });
 
     const warnings: string[] = [];
     const orig = console.warn;
     console.warn = (...args: any[]) => warnings.push(args.join(' '));
 
     try {
-      await executeAction(store, '/t/3', undefined, undefined, 'noop');
+      await executeAction(tree, '/t/3', undefined, undefined, 'noop');
     } finally {
       console.warn = orig;
     }
@@ -110,15 +110,15 @@ describe('pre/post action conditions', () => {
   });
 
   it('no post warning when fields change', async () => {
-    const store = createMemoryTree();
-    await store.set({ ...createNode('/t/4', 'test.ticket'), status: 'open', assignee: 'alice' });
+    const tree = createMemoryTree();
+    await tree.set({ ...createNode('/t/4', 'test.ticket'), status: 'open', assignee: 'alice' });
 
     const warnings: string[] = [];
     const orig = console.warn;
     console.warn = (...args: any[]) => warnings.push(args.join(' '));
 
     try {
-      await executeAction(store, '/t/4', undefined, undefined, 'close');
+      await executeAction(tree, '/t/4', undefined, undefined, 'close');
     } finally {
       console.warn = orig;
     }

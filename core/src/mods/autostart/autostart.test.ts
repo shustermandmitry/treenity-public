@@ -21,22 +21,22 @@ register('test.autosvc', 'service', async (node) => {
 describe('autostart dynamic start/stop', () => {
   async function boot() {
     svcLog.length = 0;
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/autostart', 'autostart'));
-    const handle = await startServices(store, () => () => {});
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/autostart', 'autostart'));
+    const handle = await startServices(tree, () => () => {});
     assert.ok(handle);
-    return { store, handle: handle! };
+    return { tree, handle: handle! };
   }
 
   it('startService creates ref child and starts service', async () => {
-    const { store, handle } = await boot();
+    const { tree, handle } = await boot();
 
-    await store.set({ $path: '/srv/a', $type: 'test.autosvc' } as NodeData);
+    await tree.set({ $path: '/srv/a', $type: 'test.autosvc' } as NodeData);
     await startService('/srv/a');
 
     assert.deepEqual(svcLog, ['start:/srv/a']);
 
-    const { items } = await store.getChildren('/sys/autostart');
+    const { items } = await tree.getChildren('/sys/autostart');
     const ref = items.find(n => (n as any).$ref === '/srv/a');
     assert.ok(ref, 'ref child created');
     assert.equal(ref!.$type, 'ref');
@@ -45,15 +45,15 @@ describe('autostart dynamic start/stop', () => {
   });
 
   it('stopService stops service and removes ref', async () => {
-    const { store, handle } = await boot();
+    const { tree, handle } = await boot();
 
-    await store.set({ $path: '/srv/b', $type: 'test.autosvc' } as NodeData);
+    await tree.set({ $path: '/srv/b', $type: 'test.autosvc' } as NodeData);
     await startService('/srv/b');
     await stopService('/srv/b');
 
     assert.deepEqual(svcLog, ['start:/srv/b', 'stop:/srv/b']);
 
-    const { items } = await store.getChildren('/sys/autostart');
+    const { items } = await tree.getChildren('/sys/autostart');
     const ref = items.find(n => (n as any).$ref === '/srv/b');
     assert.equal(ref, undefined, 'ref removed after stop');
 
@@ -61,9 +61,9 @@ describe('autostart dynamic start/stop', () => {
   });
 
   it('startService is idempotent', async () => {
-    const { store, handle } = await boot();
+    const { tree, handle } = await boot();
 
-    await store.set({ $path: '/srv/c', $type: 'test.autosvc' } as NodeData);
+    await tree.set({ $path: '/srv/c', $type: 'test.autosvc' } as NodeData);
     await startService('/srv/c');
     await startService('/srv/c');
 
@@ -73,12 +73,12 @@ describe('autostart dynamic start/stop', () => {
 
   it('boot walks existing ref children', async () => {
     svcLog.length = 0;
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/autostart', 'autostart'));
-    await store.set({ $path: '/srv/d', $type: 'test.autosvc' } as NodeData);
-    await store.set({ $path: '/sys/autostart/d', $type: 'ref', $ref: '/srv/d' } as NodeData);
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/autostart', 'autostart'));
+    await tree.set({ $path: '/srv/d', $type: 'test.autosvc' } as NodeData);
+    await tree.set({ $path: '/sys/autostart/d', $type: 'ref', $ref: '/srv/d' } as NodeData);
 
-    const handle = await startServices(store, () => () => {});
+    const handle = await startServices(tree, () => () => {});
     assert.deepEqual(svcLog, ['start:/srv/d']);
     await handle!.stop();
   });

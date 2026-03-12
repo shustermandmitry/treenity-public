@@ -3,7 +3,11 @@ import type { TypeSchema } from '@treenity/core/schema/types';
 import { useCurrentNode } from '@treenity/react/context';
 import { useChildren } from '@treenity/react/hooks';
 import { useSchema } from '@treenity/react/schema-loader';
-import React, { useMemo, useState } from 'react';
+import { Button } from '@treenity/react/ui/button';
+import { Checkbox } from '@treenity/react/ui/checkbox';
+import { Input } from '@treenity/react/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@treenity/react/ui/select';
+import { useMemo, useState } from 'react';
 import type { UITable } from './types';
 
 // ── Field tree types ──
@@ -91,7 +95,7 @@ function TableEditView({ value, onChange }: { value: ComponentData; onChange?: (
   }, [typeMap, activeType]);
 
   const schema = useSchema(activeType);
-  const fieldTree = useMemo(() => buildFieldTree(schema, sample), [schema, sample]);
+  const fieldTree = useMemo(() => buildFieldTree(schema ?? null, sample), [schema, sample]);
 
   const savedColumns = state.columns?.[activeType] ?? [];
   const hasCustomColumns = savedColumns.length > 0;
@@ -132,85 +136,83 @@ function TableEditView({ value, onChange }: { value: ComponentData; onChange?: (
     <div className="flex flex-col gap-3 text-xs">
       <div className="flex flex-col gap-2">
         <label className="flex items-center gap-2">
-          <span className="text-zinc-400 w-20">Page size</span>
-          <input
+          <span className="w-20 text-muted-foreground">Page size</span>
+          <Input
             type="number"
             min={1}
             max={1000}
-            className="w-20 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-300"
+            className="h-7 w-20 text-xs"
             value={state.pageSize ?? 25}
             onChange={e => emit({ pageSize: Number(e.target.value) || 25 })}
           />
         </label>
 
         <label className="flex items-center gap-2">
-          <span className="text-zinc-400 w-20">Field</span>
-          <input
+          <span className="w-20 text-muted-foreground">Field</span>
+          <Input
             type="text"
             placeholder="(node itself)"
-            className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-300 placeholder:text-zinc-600"
+            className="h-7 flex-1 text-xs"
             value={state.field ?? ''}
             onChange={e => emit({ field: e.target.value })}
           />
         </label>
 
         {types.length > 1 && (
-          <label className="flex items-center gap-2">
-            <span className="text-zinc-400 w-20">Type</span>
-            <select
-              className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-300"
-              value={activeType}
-              onChange={e => emit({ displayType: e.target.value })}
-            >
-              {types.map(t => (
-                <option key={t} value={t}>{t} ({typeMap.get(t)?.length ?? 0})</option>
-              ))}
-            </select>
-          </label>
+          <div className="flex items-center gap-2">
+            <span className="w-20 text-muted-foreground">Type</span>
+            <Select value={activeType} onValueChange={v => emit({ displayType: v })}>
+              <SelectTrigger className="h-7 flex-1 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {types.map(t => (
+                  <SelectItem key={t} value={t}>{t} ({typeMap.get(t)?.length ?? 0})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
       </div>
 
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between">
-          <span className="text-zinc-400 font-medium">Columns{activeType ? ` — ${activeType}` : ''}</span>
+          <span className="font-medium text-muted-foreground">Columns{activeType ? ` — ${activeType}` : ''}</span>
           {hasCustomColumns && (
-            <button
-              onClick={resetColumns}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
+            <Button variant="ghost" size="sm" className="h-5 text-[10px]" onClick={resetColumns}>
               reset
-            </button>
+            </Button>
           )}
         </div>
 
         {fieldTree.length === 0 && (
-          <div className="text-zinc-500 py-2">No fields detected</div>
+          <div className="py-2 text-muted-foreground">No fields detected</div>
         )}
 
         <div className="flex flex-col gap-0.5">
           {fieldTree.map(field => (
             <div key={field.key}>
-              <div className="flex items-center gap-1.5 py-0.5 hover:bg-zinc-800/50 rounded px-1">
+              <div className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/50">
                 {field.children ? (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-4 w-4 p-0 text-muted-foreground"
                     onClick={() => toggleExpand(field.key)}
-                    className="text-zinc-500 w-4 text-center"
                   >
                     {expanded.has(field.key) ? '▾' : '▸'}
-                  </button>
+                  </Button>
                 ) : (
                   <span className="w-4" />
                 )}
-                <label className="flex items-center gap-1.5 cursor-pointer flex-1">
-                  <input
-                    type="checkbox"
+                <label className="flex flex-1 cursor-pointer items-center gap-1.5">
+                  <Checkbox
                     checked={isFieldVisible(field.key)}
                     onChange={() => toggleField(field.key, field.label)}
-                    className="w-auto rounded border-zinc-600"
                   />
-                  <span className="text-zinc-300">{field.label}</span>
+                  <span>{field.label}</span>
                   {field.type && (
-                    <span className="text-zinc-600 text-[10px]">{field.type}</span>
+                    <span className="text-[10px] text-muted-foreground/50">{field.type}</span>
                   )}
                 </label>
               </div>
@@ -218,14 +220,12 @@ function TableEditView({ value, onChange }: { value: ComponentData; onChange?: (
               {field.children && expanded.has(field.key) && (
                 <div className="ml-5 flex flex-col gap-0.5">
                   {field.children.map(sub => (
-                    <label key={sub.key} className="flex items-center gap-1.5 py-0.5 px-1 hover:bg-zinc-800/50 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
+                    <label key={sub.key} className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/50">
+                      <Checkbox
                         checked={isFieldVisible(sub.key)}
                         onChange={() => toggleField(sub.key, sub.label)}
-                        className="w-auto rounded border-zinc-600"
                       />
-                      <span className="text-zinc-300">{sub.label}</span>
+                      <span>{sub.label}</span>
                     </label>
                   ))}
                 </div>

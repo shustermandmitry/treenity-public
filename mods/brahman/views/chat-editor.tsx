@@ -21,11 +21,15 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import type { NodeData } from '@treenity/core';
 import { getDefaults } from '@treenity/core/comp';
+import { Button } from '@treenity/react/components/ui/button';
+import { Checkbox } from '@treenity/react/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@treenity/react/components/ui/dialog';
+import { Input } from '@treenity/react/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@treenity/react/components/ui/select';
 import { set, useChildren, usePath } from '@treenity/react/hooks';
 import { trpc } from '@treenity/react/trpc';
-import { Camera, File, GripVertical, Mic, MoreHorizontal, Plus, Trash2, Video, X } from 'lucide-react';
+import { Camera, File, GripVertical, Mic, MoreHorizontal, Plus, Trash2, Video } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { ACTION_TYPES, MENU_TYPES, type MenuButton, type MenuRow, type MenuType, type TString } from '../types';
 import { actionIcon, actionSummary } from './action-cards';
 import { TStringLineInput, tstringPreview } from './tstring-input';
@@ -144,6 +148,7 @@ function EditableText({
 }
 
 // ── Bubble shells ──
+// NOTE: These use hardcoded Telegram dark-theme colors intentionally to emulate the TG chat UI
 
 function BotBubble({ children, first, tools }: { children: React.ReactNode; first?: boolean; tools?: React.ReactNode }) {
   return (
@@ -187,9 +192,9 @@ function SystemPill({ children, onClick }: { children: React.ReactNode; onClick?
   );
 }
 
-// ── Settings popover ──
+// ── Settings dialog ──
 
-function SettingsPopover({
+function SettingsDialog({
   node,
   onUpdate,
   onDelete,
@@ -202,65 +207,60 @@ function SettingsPopover({
 }) {
   const type = node.$type;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50" onClick={onClose}>
-      <div
-        className="absolute bg-[#1c2733] border border-[#2b3945] rounded-lg shadow-xl p-3 space-y-2 w-64"
-        style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-medium text-[#e1e3e6]">
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-xs">
+        <DialogHeader>
+          <DialogTitle className="text-sm">
             {ACTION_TYPES.find(a => a.type === type)?.label ?? type.split('.').at(-1)}
-          </span>
-          <button type="button" onClick={onClose} className="text-[#6c7883] hover:text-[#e1e3e6]">
-            <X className="h-3.5 w-3.5" />
-          </button>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-2">
+          {/* Type-specific settings */}
+          {type === 'brahman.action.message' && (
+            <>
+              <SettingSelect label="Menu" value={(node.menuType as string) ?? 'none'}
+                options={MENU_TYPES.map(m => ({ value: m.value, label: m.label }))}
+                onChange={v => onUpdate({ menuType: v })} />
+              <SettingCheckbox label="Disable links" checked={!!node.disableLinks}
+                onChange={v => onUpdate({ disableLinks: v })} />
+            </>
+          )}
+
+          {type === 'brahman.action.question' && (
+            <>
+              <SettingSelect label="Input type" value={(node.inputType as string) ?? 'text'}
+                options={[{ value: 'text', label: 'Text' }, { value: 'photo', label: 'Photo' }]}
+                onChange={v => onUpdate({ inputType: v })} />
+              <SettingInput label="Save to" value={(node.saveTo as string) ?? ''}
+                placeholder="session.field" onChange={v => onUpdate({ saveTo: v })} />
+            </>
+          )}
+
+          {type === 'brahman.action.file' && (
+            <SettingSelect label="Send as" value={(node.asType as string) ?? ''}
+              options={[
+                { value: '', label: 'Auto' }, { value: 'photo', label: 'Photo' },
+                { value: 'document', label: 'Document' }, { value: 'video', label: 'Video' },
+                { value: 'audio', label: 'Audio' }, { value: 'voice', label: 'Voice' },
+              ]}
+              onChange={v => onUpdate({ asType: v })} />
+          )}
+
+          <div className="pt-1 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDelete}
+              className="text-destructive hover:text-destructive p-0 h-auto text-xs"
+            >
+              <Trash2 className="h-3 w-3 mr-1" /> Delete action
+            </Button>
+          </div>
         </div>
-
-        {/* Type-specific settings */}
-        {type === 'brahman.action.message' && (
-          <>
-            <SettingSelect label="Menu" value={(node.menuType as string) ?? 'none'}
-              options={MENU_TYPES.map(m => ({ value: m.value, label: m.label }))}
-              onChange={v => onUpdate({ menuType: v })} />
-            <SettingCheckbox label="Disable links" checked={!!node.disableLinks}
-              onChange={v => onUpdate({ disableLinks: v })} />
-          </>
-        )}
-
-        {type === 'brahman.action.question' && (
-          <>
-            <SettingSelect label="Input type" value={(node.inputType as string) ?? 'text'}
-              options={[{ value: 'text', label: 'Text' }, { value: 'photo', label: 'Photo' }]}
-              onChange={v => onUpdate({ inputType: v })} />
-            <SettingInput label="Save to" value={(node.saveTo as string) ?? ''}
-              placeholder="session.field" onChange={v => onUpdate({ saveTo: v })} />
-          </>
-        )}
-
-        {type === 'brahman.action.file' && (
-          <SettingSelect label="Send as" value={(node.asType as string) ?? ''}
-            options={[
-              { value: '', label: 'Auto' }, { value: 'photo', label: 'Photo' },
-              { value: 'document', label: 'Document' }, { value: 'video', label: 'Video' },
-              { value: 'audio', label: 'Audio' }, { value: 'voice', label: 'Voice' },
-            ]}
-            onChange={v => onUpdate({ asType: v })} />
-        )}
-
-        <div className="pt-1 border-t border-[#2b3945]">
-          <button
-            type="button"
-            onClick={onDelete}
-            className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 py-1"
-          >
-            <Trash2 className="h-3 w-3" /> Delete action
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -269,13 +269,15 @@ function SettingSelect({ label, value, options, onChange }: {
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[11px] text-[#6c7883]">{label}</span>
-      <select
-        className="bg-[#0e1621] border border-[#2b3945] rounded text-xs text-[#e1e3e6] px-2 py-1"
-        value={value} onChange={e => onChange(e.target.value)}
-      >
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger size="sm" className="w-auto">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -285,9 +287,8 @@ function SettingCheckbox({ label, checked, onChange }: {
 }) {
   return (
     <label className="flex items-center justify-between gap-2 cursor-pointer">
-      <span className="text-[11px] text-[#6c7883]">{label}</span>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
-        className="rounded border-[#2b3945]" />
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <Checkbox checked={checked} onChange={e => onChange(e.target.checked)} />
     </label>
   );
 }
@@ -297,9 +298,9 @@ function SettingInput({ label, value, placeholder, onChange }: {
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[11px] text-[#6c7883] shrink-0">{label}</span>
-      <input
-        className="bg-[#0e1621] border border-[#2b3945] rounded text-xs text-[#e1e3e6] px-2 py-1 w-32 font-mono"
+      <span className="text-[11px] text-muted-foreground shrink-0">{label}</span>
+      <Input
+        className="w-32 h-7 text-xs font-mono"
         value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)}
       />
     </div>
@@ -387,9 +388,9 @@ function EditableButtons({
         + row
       </button>
 
-      {/* Button edit modal */}
+      {/* Button edit dialog */}
       {editBtn && rows[editBtn.ri]?.buttons[editBtn.bi] && (
-        <ButtonEditPopover
+        <ButtonEditDialog
           button={rows[editBtn.ri].buttons[editBtn.bi]}
           onSave={btn => updateButton(editBtn.ri, editBtn.bi, btn)}
           onDelete={() => deleteButton(editBtn.ri, editBtn.bi)}
@@ -400,7 +401,7 @@ function EditableButtons({
   );
 }
 
-function ButtonEditPopover({
+function ButtonEditDialog({
   button,
   onSave,
   onDelete,
@@ -413,54 +414,46 @@ function ButtonEditPopover({
 }) {
   const [draft, setDraft] = useState(() => ({ ...button }));
 
-  return createPortal(
-    <div className="fixed inset-0 z-50" onClick={onClose}>
-      <div
-        className="absolute bg-[#1c2733] border border-[#2b3945] rounded-lg shadow-xl p-3 space-y-2 w-72"
-        style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-medium text-[#e1e3e6]">Edit button</span>
-          <button type="button" onClick={onClose} className="text-[#6c7883] hover:text-[#e1e3e6]">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-xs">
+        <DialogHeader>
+          <DialogTitle className="text-sm">Edit button</DialogTitle>
+        </DialogHeader>
 
-        <div>
-          <span className="text-[11px] text-[#6c7883]">Title</span>
-          <TStringLineInput
-            value={draft.title}
-            onChange={title => setDraft(d => ({ ...d, title }))}
-            langs={['ru', 'en']}
-          />
-        </div>
+        <div className="space-y-2">
+          <div>
+            <span className="text-[11px] text-muted-foreground">Title</span>
+            <TStringLineInput
+              value={draft.title}
+              onChange={title => setDraft(d => ({ ...d, title }))}
+              langs={['ru', 'en']}
+            />
+          </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-[#6c7883] shrink-0">URL</span>
-          <input
-            className="flex-1 bg-[#0e1621] border border-[#2b3945] rounded text-xs text-[#e1e3e6] px-2 py-1"
-            placeholder="https://..."
-            value={draft.url ?? ''}
-            onChange={e => setDraft(d => ({ ...d, url: e.target.value || undefined }))}
-          />
-        </div>
-
-        <div className="flex justify-between pt-1 border-t border-[#2b3945]">
-          <button type="button" onClick={onDelete}
-            className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
-            <Trash2 className="h-3 w-3" /> Delete
-          </button>
-          <div className="flex gap-1">
-            <button type="button" onClick={onClose}
-              className="text-xs text-[#6c7883] hover:text-[#e1e3e6] px-2 py-1">Cancel</button>
-            <button type="button" onClick={() => { onSave(draft); onClose(); }}
-              className="text-xs bg-[#2b5278] text-[#e1e3e6] px-3 py-1 rounded hover:bg-[#3d6a99]">Save</button>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground shrink-0">URL</span>
+            <Input
+              className="flex-1 h-7 text-xs"
+              placeholder="https://..."
+              value={draft.url ?? ''}
+              onChange={e => setDraft(d => ({ ...d, url: e.target.value || undefined }))}
+            />
           </div>
         </div>
-      </div>
-    </div>,
-    document.body,
+
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onDelete}
+            className="text-destructive hover:text-destructive text-xs">
+            <Trash2 className="h-3 w-3 mr-1" /> Delete
+          </Button>
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={() => { onSave(draft); onClose(); }}>Save</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -614,7 +607,7 @@ function SortableAction({
       {dragHandle}
       {content}
       {showSettings && (
-        <SettingsPopover
+        <SettingsDialog
           node={n}
           onUpdate={update}
           onDelete={onDelete}
@@ -644,12 +637,12 @@ function ChatActionPalette({ onSelect }: { onSelect: (type: string) => void }) {
 
         {open && (
           <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 z-50 w-52
-            bg-[#1c2733] border border-[#2b3945] rounded-lg shadow-xl py-1 max-h-64 overflow-y-auto">
+            bg-popover border border-border rounded-lg shadow-xl py-1 max-h-64 overflow-y-auto">
             {ACTION_TYPES.map(at => (
               <button
                 key={at.type}
                 type="button"
-                className="w-full text-left px-3 py-1.5 text-xs text-[#e1e3e6] hover:bg-[#2b3945] flex items-center gap-2"
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent flex items-center gap-2"
                 onClick={() => { onSelect(at.type); setOpen(false); }}
               >
                 {actionIcon(at.type)}

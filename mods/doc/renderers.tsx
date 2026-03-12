@@ -8,6 +8,7 @@ import TaskList from '@tiptap/extension-task-list';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { register } from '@treenity/core';
+import { Input } from '@treenity/react/ui/input';
 import { common, createLowlight } from 'lowlight';
 import { useCallback, useEffect, useRef } from 'react';
 import { SlashCommand } from './slash-command';
@@ -70,15 +71,15 @@ function DocPageView({ value, onChange }: BlockProps) {
       {/* Title */}
       <div className="mb-5">
         {onChange ? (
-          <input
+          <Input
             type="text"
             value={value.title || ''}
             onChange={(e) => onChange({ ...value, title: e.target.value })}
             placeholder="Untitled"
-            className="w-full text-2xl font-semibold tracking-tight bg-transparent border-none outline-none text-[var(--text)] placeholder:text-[var(--text-3)]"
+            className="w-full text-2xl font-semibold tracking-tight bg-transparent border-none shadow-none outline-none text-foreground placeholder:text-muted-foreground/50"
           />
         ) : (
-          value.title && <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">{value.title}</h1>
+          value.title && <h1 className="text-2xl font-semibold tracking-tight text-foreground">{value.title}</h1>
         )}
       </div>
 

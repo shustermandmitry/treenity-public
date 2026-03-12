@@ -9,7 +9,7 @@ import './mount-adapters'; // ensure registrations
 
 describe('Parametrized Mounts', () => {
   let rootStore: Tree;
-  let store: Tree;
+  let tree: Tree;
 
   beforeEach(() => {
     clearRegistry();
@@ -20,19 +20,19 @@ describe('Parametrized Mounts', () => {
       return createQueryTree({ source: query!.source, match: query!.match }, parentStore);
     });
     rootStore = createMemoryTree();
-    store = withMounts(rootStore);
+    tree = withMounts(rootStore);
   });
 
   it('resolves parametrized mount correctly', async () => {
-    await store.set({ ...createNode('/', 'root') });
-    await store.set({ ...createNode('/users', 'folder') });
+    await tree.set({ ...createNode('/', 'root') });
+    await tree.set({ ...createNode('/users', 'folder') });
     
     // Flat data
-    await store.set({ ...createNode('/data/orders/1', 'order', { ownerId: 'alice' }) });
-    await store.set({ ...createNode('/data/orders/2', 'order', { ownerId: 'bob' }) });
+    await tree.set({ ...createNode('/data/orders/1', 'order', { ownerId: 'alice' }) });
+    await tree.set({ ...createNode('/data/orders/2', 'order', { ownerId: 'bob' }) });
 
     // Parametrized mount point
-    await store.set({
+    await tree.set({
       ...createNode('/users/:userId/orders', 'folder', {}, {
         mount: { $type: 't.mount.query' },
         query: { $type: 'query', source: '/data/orders', match: { ownerId: ':userId' } } // the :userId should be bound
@@ -40,12 +40,12 @@ describe('Parametrized Mounts', () => {
     });
 
     // Check virtual folder for alice
-    const aliceOrders = await store.getChildren('/users/alice/orders', { depth: 1 });
+    const aliceOrders = await tree.getChildren('/users/alice/orders', { depth: 1 });
     assert.equal(aliceOrders.items.length, 1);
     assert.equal(aliceOrders.items[0].$path, '/data/orders/1');
 
     // Check virtual folder for bob
-    const bobOrders = await store.getChildren('/users/bob/orders', { depth: 1 });
+    const bobOrders = await tree.getChildren('/users/bob/orders', { depth: 1 });
     assert.equal(bobOrders.items.length, 1);
     assert.equal(bobOrders.items[0].$path, '/data/orders/2');
   });

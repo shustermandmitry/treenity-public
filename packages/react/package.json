@@ -1,8 +1,11 @@
 {
   "name": "@treenity/react",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "React binding for Treenity — reactive hooks, admin UI, and context-based component rendering.",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "AGPL-3.0",
   "author": "Treenity <hello@treenity.ai> (https://treenity.ai)",
   "homepage": "https://github.com/treenity-ai/treenity",

@@ -74,14 +74,14 @@ export function getActiveQueryCount(): number {
   return activeQueries.length;
 }
 
-// ── Reactive store wrapper ──
+// ── Reactive tree wrapper ──
 
 export interface ReactiveTree extends Tree {
   subscribe(path: string, listener: Listener, opts?: SubscribeOpts): () => void;
 }
 
 export function withSubscriptions(
-  store: Tree,
+  tree: Tree,
   onEvent?: (event: NodeEvent) => void,
 ): ReactiveTree {
   const exactListeners = new Map<string, Set<Listener>>();
@@ -105,8 +105,8 @@ export function withSubscriptions(
   }
 
   return {
-    get: store.get.bind(store),
-    getChildren: store.getChildren.bind(store),
+    get: tree.get.bind(tree),
+    getChildren: tree.getChildren.bind(tree),
 
     async set(node) {
       const patches = node['$patches'] as Patch[] | undefined;
@@ -115,7 +115,7 @@ export function withSubscriptions(
         delete node['$patches'];
       }
 
-      const oldNode = await store.get(node.$path);
+      const oldNode = await tree.get(node.$path);
 
       // CDC Matrix Evaluation
       const addVps: string[] = [];
@@ -137,7 +137,7 @@ export function withSubscriptions(
         }
       }
 
-      await store.set(node);
+      await tree.set(node);
 
       const { $path, ...body } = node;
 
@@ -157,8 +157,8 @@ export function withSubscriptions(
     },
 
     async remove(path) {
-      const oldNode = await store.get(path);
-      const result = await store.remove(path);
+      const oldNode = await tree.get(path);
+      const result = await tree.remove(path);
 
       if (result && oldNode) {
         const rmVps: string[] = [];
@@ -178,12 +178,12 @@ export function withSubscriptions(
     },
 
     async patch(path, ops, ctx) {
-      const oldNode = await store.get(path);
+      const oldNode = await tree.get(path);
 
-      await store.patch(path, ops, ctx);
+      await tree.patch(path, ops, ctx);
 
       // CDC Matrix — read new state to check virtual path changes
-      const newNode = await store.get(path);
+      const newNode = await tree.get(path);
       const addVps: string[] = [];
       const rmVps: string[] = [];
 

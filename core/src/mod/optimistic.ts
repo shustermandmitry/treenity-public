@@ -20,7 +20,7 @@ export class OptimisticBuffer {
   private pending = new Map<string, PendingMutation[]>();
   private idCounter = 0;
 
-  // Apply an action optimistically: clone node, run method, store prediction
+  // Apply an action optimistically: clone node, run method, tree prediction
   apply(
     node: NodeData,
     compType: string,

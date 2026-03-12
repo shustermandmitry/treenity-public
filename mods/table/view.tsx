@@ -3,7 +3,19 @@ import type { TypeSchema } from '@treenity/core/schema/types';
 import { Render, RenderContext, type ViewCtx } from '@treenity/react/context';
 import { useChildren } from '@treenity/react/hooks';
 import { useSchema } from '@treenity/react/schema-loader';
-import React, { useMemo } from 'react';
+import { Button } from '@treenity/react/ui/button';
+import { Input } from '@treenity/react/ui/input';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@treenity/react/ui/pagination';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@treenity/react/ui/table';
+import { useMemo } from 'react';
 import type { ColumnConfig, UITable } from './types';
 import { useDebouncedSync } from './use-debounced-sync';
 
@@ -174,22 +186,20 @@ function TableView({ value, ctx }: { value: ComponentData; ctx?: ViewCtx | null 
   return (
     <div className="flex flex-col gap-2 text-sm">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         {types.length > 1 && types.map(t => (
-          <button
+          <Button
             key={t}
+            variant={t === activeType ? 'default' : 'outline'}
+            size="sm"
+            className="h-6 text-xs"
             onClick={() => setDisplayType(t)}
-            className={`px-2 py-0.5 rounded text-xs border transition-colors ${
-              t === activeType
-                ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
-                : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
-            }`}
           >
-            {t} <span className="text-zinc-500">({typeMap.get(t)?.length ?? 0})</span>
-          </button>
+            {t} <span className="ml-1 text-muted-foreground">({typeMap.get(t)?.length ?? 0})</span>
+          </Button>
         ))}
 
-        <span className="ml-auto text-xs text-zinc-500">
+        <span className="ml-auto text-xs text-muted-foreground">
           {sorted.length} row{sorted.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -197,88 +207,137 @@ function TableView({ value, ctx }: { value: ComponentData; ctx?: ViewCtx | null 
       {/* Table */}
       {columns.length > 0 ? (
         <RenderContext name="react:compact:cell">
-          <div className="overflow-x-auto rounded border border-zinc-800">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/50">
+          <div className="rounded-md border border-border">
+            <Table className="text-xs">
+              <TableHeader>
+                <TableRow>
                   {columns.map(col => (
-                    <th
+                    <TableHead
                       key={col.field}
-                      className="text-left px-2 py-1.5 font-medium text-zinc-400 cursor-pointer hover:text-zinc-200 select-none"
+                      className="h-8 cursor-pointer select-none text-xs hover:text-foreground"
                       onClick={() => toggleSort(col.field)}
                     >
                       <span>{col.label ?? col.field}</span>
                       {state.sort === col.field && (
-                        <span className="ml-1 text-blue-400">
+                        <span className="ml-1 text-primary">
                           {state.sortDir === 'asc' ? '↑' : '↓'}
                         </span>
                       )}
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
-                <tr className="border-b border-zinc-800/50">
+                </TableRow>
+                <TableRow className="hover:bg-transparent">
                   {columns.map(col => (
-                    <th key={col.field} className="px-1 py-1">
-                      <input
+                    <TableHead key={col.field} className="h-auto px-1 py-1">
+                      <Input
                         type="text"
                         placeholder="filter"
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-xs text-zinc-300 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+                        className="h-6 text-xs"
                         value={col.filter ?? ''}
                         onChange={e => setColumnFilter(col.field, e.target.value)}
                       />
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {pageRows.map(row => (
-                  <tr
-                    key={row.$path}
-                    className="border-b border-zinc-800/30 hover:bg-zinc-800/30 transition-colors"
-                  >
+                  <TableRow key={row.$path}>
                     {columns.map(col => (
-                      <td key={col.field} className="px-2 py-1.5 text-zinc-300 truncate max-w-[300px]">
+                      <TableCell key={col.field} className="max-w-[300px] truncate">
                         <CellValue value={cellValue(row.data, col.field)} />
-                      </td>
+                      </TableCell>
                     ))}
-                  </tr>
+                  </TableRow>
                 ))}
                 {pageRows.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="px-2 py-4 text-center text-zinc-500">
+                  <TableRow>
+                    <TableCell colSpan={columns.length} className="py-4 text-center text-muted-foreground">
                       No data
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </RenderContext>
       ) : (
-        <div className="text-zinc-500 py-4 text-center">No children or schema</div>
+        <div className="py-4 text-center text-muted-foreground">No children or schema</div>
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center gap-2 text-xs text-zinc-400">
-          <button
-            onClick={() => setPage(page - 1)}
-            disabled={page === 0}
-            className="px-2 py-0.5 rounded border border-zinc-700 disabled:opacity-30 hover:border-zinc-500 transition-colors"
-          >
-            Prev
-          </button>
-          <span>{page + 1} / {totalPages}</span>
-          <button
-            onClick={() => setPage(page + 1)}
-            disabled={page >= totalPages - 1}
-            className="px-2 py-0.5 rounded border border-zinc-700 disabled:opacity-30 hover:border-zinc-500 transition-colors"
-          >
-            Next
-          </button>
-        </div>
+        <TablePagination page={page} totalPages={totalPages} onPageChange={setPage} />
       )}
     </div>
+  );
+}
+
+// ── Pagination ──
+
+function pageRange(current: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+
+  const pages: (number | 'ellipsis')[] = [0];
+
+  if (current > 2) pages.push('ellipsis');
+
+  const start = Math.max(1, current - 1);
+  const end = Math.min(total - 2, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+
+  if (current < total - 3) pages.push('ellipsis');
+
+  pages.push(total - 1);
+  return pages;
+}
+
+function TablePagination({ page, totalPages, onPageChange }: {
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}) {
+  const pages = pageRange(page, totalPages);
+
+  return (
+    <Pagination className="justify-start">
+      <PaginationContent className="gap-0.5">
+        <PaginationItem>
+          <PaginationPrevious
+            className="h-7 cursor-pointer text-xs [&>span]:hidden"
+            onClick={() => page > 0 && onPageChange(page - 1)}
+            aria-disabled={page === 0}
+            tabIndex={page === 0 ? -1 : undefined}
+          />
+        </PaginationItem>
+
+        {pages.map((p, i) =>
+          p === 'ellipsis' ? (
+            <PaginationItem key={`e${i}`}>
+              <PaginationEllipsis className="size-7" />
+            </PaginationItem>
+          ) : (
+            <PaginationItem key={p}>
+              <PaginationLink
+                className="h-7 w-7 cursor-pointer text-xs"
+                isActive={p === page}
+                onClick={() => onPageChange(p)}
+              >
+                {p + 1}
+              </PaginationLink>
+            </PaginationItem>
+          ),
+        )}
+
+        <PaginationItem>
+          <PaginationNext
+            className="h-7 cursor-pointer text-xs [&>span]:hidden"
+            onClick={() => page < totalPages - 1 && onPageChange(page + 1)}
+            aria-disabled={page >= totalPages - 1}
+            tabIndex={page >= totalPages - 1 ? -1 : undefined}
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
   );
 }
 

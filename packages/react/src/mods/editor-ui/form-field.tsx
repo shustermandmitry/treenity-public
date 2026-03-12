@@ -1,5 +1,6 @@
 import { Button } from '#components/ui/button';
 import { Input } from '#components/ui/input';
+import { Textarea } from '#components/ui/textarea';
 import { isRef, resolveExact } from '@treenity/core';
 import { createElement, useState } from 'react';
 import { FieldLabel, RefEditor } from './FieldLabel';
@@ -42,7 +43,7 @@ export function renderField(
   const handler = resolveExact(fieldSchema.type, ctx) ?? resolveExact('string', ctx);
   if (!handler)
     return (
-      <div key={name} className="text-[--danger] text-xs">
+      <div key={name} className="text-destructive text-xs">
         No form handler: {fieldSchema.type}
       </div>
     );
@@ -91,7 +92,8 @@ export function StringArrayField({
 
   if (!isStrings) {
     return (
-      <textarea
+      <Textarea
+        className="min-h-16 text-xs font-mono"
         value={JSON.stringify(value, null, 2)}
         onChange={(e) => {
           try {

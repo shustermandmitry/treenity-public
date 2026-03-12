@@ -7,7 +7,7 @@ export interface TreenityMod {
   dependencies?: string[];
   server?: () => Promise<unknown>;
   client?: () => Promise<unknown>;
-  seed?: (store: Tree) => Promise<void>;
+  seed?: (tree: Tree) => Promise<void>;
   onLoad?: () => void | Promise<void>;
   onUnload?: () => void | Promise<void>;
 }

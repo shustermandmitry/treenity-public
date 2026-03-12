@@ -8,25 +8,25 @@ import { type ServiceCtx, type ServiceHandle, startServices, type StoreEvent } f
 
 describe('resolveRef', () => {
   it('returns node as-is when not a ref', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/a', 'dir');
-    await store.set(node);
-    assert.deepEqual(await resolveRef(store, node), node);
+    await tree.set(node);
+    assert.deepEqual(await resolveRef(tree, node), node);
   });
 
   it('resolves ref to target node', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const target = createNode('/bot', 'bot');
-    await store.set(target);
+    await tree.set(target);
     const refNode = { $path: '/sys/autostart/bot', $type: 'ref', $ref: '/bot' } as any;
-    await store.set(refNode);
-    assert.deepEqual(await resolveRef(store, refNode), target);
+    await tree.set(refNode);
+    assert.deepEqual(await resolveRef(tree, refNode), target);
   });
 
   it('throws on broken ref', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const refNode = { $path: '/sys/autostart/x', $type: 'ref', $ref: '/missing' } as any;
-    await assert.rejects(() => resolveRef(store, refNode));
+    await assert.rejects(() => resolveRef(tree, refNode));
   });
 });
 
@@ -34,8 +34,8 @@ describe('startServices', () => {
   beforeEach(() => clearRegistry());
 
   it('returns null when no autostart node', async () => {
-    const store = createMemoryTree();
-    assert.equal(await startServices(store, () => () => {}), null);
+    const tree = createMemoryTree();
+    assert.equal(await startServices(tree, () => () => {}), null);
   });
 
   it('starts autostart service', async () => {
@@ -50,9 +50,9 @@ describe('startServices', () => {
       };
     });
 
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/autostart', 'autostart'));
-    const handle = await startServices(store, () => () => {});
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/autostart', 'autostart'));
+    const handle = await startServices(tree, () => () => {});
 
     assert.equal(started, true);
     assert.ok(handle);
@@ -64,10 +64,10 @@ describe('startServices', () => {
     const log: string[] = [];
 
     register('autostart', 'service', async (node, ctx) => {
-      const { items } = await ctx.store.getChildren(node.$path);
+      const { items } = await ctx.tree.getChildren(node.$path);
       const handles: ServiceHandle[] = [];
       for (const child of items) {
-        const target = await resolveRef(ctx.store, child);
+        const target = await resolveRef(ctx.tree, child);
         const { resolve } = await import('#core');
         const handler = resolve(target.$type, 'service');
         if (!handler) continue;
@@ -91,14 +91,14 @@ describe('startServices', () => {
       };
     });
 
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/autostart', 'autostart'));
-    await store.set(createNode('/sys/autostart/a', 'echo'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/autostart', 'autostart'));
+    await tree.set(createNode('/sys/autostart/a', 'echo'));
     const target = createNode('/srv/b', 'echo');
-    await store.set(target);
-    await store.set({ $path: '/sys/autostart/b', $type: 'ref', $ref: '/srv/b' } as any);
+    await tree.set(target);
+    await tree.set({ $path: '/sys/autostart/b', $type: 'ref', $ref: '/srv/b' } as any);
 
-    const handle = await startServices(store, () => () => {})!;
+    const handle = await startServices(tree, () => () => {})!;
     assert.deepEqual(log, ['start:/sys/autostart/a', 'start:/srv/b']);
 
     await handle!.stop();
@@ -114,10 +114,10 @@ describe('startServices', () => {
     const log: string[] = [];
 
     register('autostart', 'service', async (node, ctx) => {
-      const { items } = await ctx.store.getChildren(node.$path);
+      const { items } = await ctx.tree.getChildren(node.$path);
       const handles: ServiceHandle[] = [];
       for (const child of items) {
-        const target = await resolveRef(ctx.store, child);
+        const target = await resolveRef(ctx.tree, child);
         const { resolve } = await import('#core');
         const handler = resolve(target.$type, 'service');
         if (!handler) continue;
@@ -146,12 +146,12 @@ describe('startServices', () => {
       };
     });
 
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/autostart', 'autostart'));
-    await store.set(createNode('/sys/autostart/a', 'bad'));
-    await store.set(createNode('/sys/autostart/b', 'good'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/autostart', 'autostart'));
+    await tree.set(createNode('/sys/autostart/a', 'bad'));
+    await tree.set(createNode('/sys/autostart/b', 'good'));
 
-    const handle = await startServices(store, () => () => {});
+    const handle = await startServices(tree, () => () => {});
     assert.deepEqual(log, ['started']);
     await handle!.stop();
     assert.deepEqual(log, ['started', 'stopped']);
@@ -168,9 +168,9 @@ describe('ServiceCtx.subscribe', () => {
       return { stop: async () => {} };
     });
 
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/autostart', 'watcher'));
-    await startServices(store, () => () => {});
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/autostart', 'watcher'));
+    await startServices(tree, () => () => {});
     assert.equal(receivedSubscribe, true);
   });
 

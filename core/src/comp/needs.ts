@@ -12,7 +12,7 @@ export type NeedSpec =
 
 export type ResolvedDeps = Record<string, ComponentData | NodeData | NodeData[]>;
 
-// ── Needs store ──
+// ── Needs tree ──
 // Local map keyed by type@action. Populated by registerActionNeeds (called from registerType).
 // Separate from registry meta because needs are registered before actions exist in the registry.
 
@@ -49,7 +49,7 @@ function resolvePath(base: string, rel: string): string {
 // ── Dependency collection ──
 
 export async function collectDeps(
-  node: NodeData, componentName: string, actionName: string, store: Tree,
+  node: NodeData, componentName: string, actionName: string, tree: Tree,
 ): Promise<ResolvedDeps> {
   const cv = getComponent(node, AnyType, componentName);
   if (!cv) throw new Error(`Component "${componentName}" not found on ${node.$path}`);
@@ -80,9 +80,9 @@ export async function collectDeps(
     }
 
     if (s.kind === 'children') {
-      async_.push(store.getChildren(target).then(({ items }) => { deps[s.key] = items; }));
+      async_.push(tree.getChildren(target).then(({ items }) => { deps[s.key] = items; }));
     } else {
-      async_.push(store.get(target).then(n => {
+      async_.push(tree.get(target).then(n => {
         if (!n) throw new Error(`Dep "${s.key}" → "${target}" not found`);
         deps[s.key] = n;
       }));

@@ -3,6 +3,7 @@
 
 import { execute, usePath } from '@treenity/react/hooks';
 import { getActions, getComponents, getPlainFields, getSchema } from '@treenity/react/mods/editor-ui/node-utils';
+import { Button } from '@treenity/react/ui/button';
 
 type Props = {
   path: string;
@@ -22,8 +23,8 @@ export function MindMapSidebar({ path, onClose, onNavigate }: Props) {
     return (
       <div className="mm-sidebar">
         <div className="mm-sidebar-header">
-          <span className="text-[var(--text-3)]">Loading...</span>
-          <button className="mm-btn" onClick={onClose}>&times;</button>
+          <span className="text-muted-foreground">Loading...</span>
+          <Button variant="ghost" size="sm" className="mm-btn" onClick={onClose}>&times;</Button>
         </div>
       </div>
     );
@@ -45,9 +46,9 @@ export function MindMapSidebar({ path, onClose, onNavigate }: Props) {
           >
             {path.split('/').at(-1) || '/'}
           </span>
-          <span className="text-[11px] text-[var(--text-3)] truncate">{path}</span>
+          <span className="text-[11px] text-muted-foreground truncate">{path}</span>
         </div>
-        <button className="mm-btn shrink-0" onClick={onClose}>&times;</button>
+        <Button variant="ghost" size="sm" className="mm-btn shrink-0" onClick={onClose}>&times;</Button>
       </div>
 
       <div className="mm-sidebar-body">
@@ -110,13 +111,15 @@ export function MindMapSidebar({ path, onClose, onNavigate }: Props) {
             <div className="mm-section-label">Actions</div>
             <div className="flex flex-wrap gap-1">
               {actions.map(a => (
-                <button
+                <Button
                   key={a}
+                  variant="ghost"
+                  size="sm"
                   className="mm-action-btn"
                   onClick={() => execute(path, a).catch(console.error)}
                 >
                   {a}
-                </button>
+                </Button>
               ))}
             </div>
           </div>

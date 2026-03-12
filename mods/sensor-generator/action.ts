@@ -20,7 +20,7 @@ register(
         value: +(20 + Math.sin(i * 0.3) * 5 + Math.random() * 2).toFixed(1),
         seq: i,
       } as NodeData;
-      await ctx.store.set(node);
+      await ctx.tree.set(node);
       yield node;
       await new Promise((r) => setTimeout(r, delay));
     }

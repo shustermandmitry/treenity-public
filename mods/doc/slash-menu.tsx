@@ -61,7 +61,7 @@ export const SlashMenu = forwardRef<any, SlashMenuProps>(({ items, command, edit
   };
 
   if (showPicker) {
-    return <MiniTree onSelect={handlePickNode} onClose={() => setShowPicker(false)} />;
+    return <MiniTree onSelect={(path) => { handlePickNode(path); setShowPicker(false); }} />;
   }
 
   if (!items.length) {

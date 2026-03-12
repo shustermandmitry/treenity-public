@@ -54,17 +54,17 @@ describe('createRemoteTree — method mapping', () => {
     const data = new Map<string, NodeData>();
     data.set('/a', { $path: '/a', $type: 'test', v: 1 } as NodeData);
     const mock = createMockTrpc(data);
-    const store = createRemoteTree(mock as any);
+    const tree = createRemoteTree(mock as any);
 
-    const node = await store.get('/a');
+    const node = await tree.get('/a');
     assert.equal(node?.$path, '/a');
     assert.equal((node as any).v, 1);
     assert.equal(mock.getCalls, 1);
   });
 
   it('get returns undefined for missing path', async () => {
-    const store = createRemoteTree(createMockTrpc(new Map()) as any);
-    const node = await store.get('/missing');
+    const tree = createRemoteTree(createMockTrpc(new Map()) as any);
+    const node = await tree.get('/missing');
     assert.equal(node, undefined);
   });
 
@@ -73,18 +73,18 @@ describe('createRemoteTree — method mapping', () => {
     data.set('/p', { $path: '/p', $type: 'dir' } as NodeData);
     data.set('/p/a', { $path: '/p/a', $type: 'test' } as NodeData);
     data.set('/p/b', { $path: '/p/b', $type: 'test' } as NodeData);
-    const store = createRemoteTree(createMockTrpc(data) as any);
+    const tree = createRemoteTree(createMockTrpc(data) as any);
 
-    const result = await store.getChildren('/p');
+    const result = await tree.getChildren('/p');
     assert.equal(result.items.length, 2);
     assert.equal(result.total, 2);
   });
 
   it('set delegates to trpc.set.mutate', async () => {
     const data = new Map<string, NodeData>();
-    const store = createRemoteTree(createMockTrpc(data) as any);
+    const tree = createRemoteTree(createMockTrpc(data) as any);
 
-    await store.set({ $path: '/x', $type: 'test', v: 42 } as NodeData);
+    await tree.set({ $path: '/x', $type: 'test', v: 42 } as NodeData);
     assert.ok(data.has('/x'));
     assert.equal((data.get('/x') as any).v, 42);
   });
@@ -92,9 +92,9 @@ describe('createRemoteTree — method mapping', () => {
   it('remove delegates to trpc.remove.mutate', async () => {
     const data = new Map<string, NodeData>();
     data.set('/x', { $path: '/x', $type: 'test' } as NodeData);
-    const store = createRemoteTree(createMockTrpc(data) as any);
+    const tree = createRemoteTree(createMockTrpc(data) as any);
 
-    const result = await store.remove('/x');
+    const result = await tree.remove('/x');
     assert.equal(result, true);
     assert.ok(!data.has('/x'));
   });
@@ -105,23 +105,23 @@ describe('withCache(remoteStore) — client pipeline', () => {
     const data = new Map<string, NodeData>();
     data.set('/a', { $path: '/a', $type: 'test' } as NodeData);
     const mock = createMockTrpc(data);
-    const store = withCache(createRemoteTree(mock as any));
+    const tree = withCache(createRemoteTree(mock as any));
 
-    await store.get('/a');
+    await tree.get('/a');
     mock.resetCalls();
-    await store.get('/a'); // should hit cache
+    await tree.get('/a'); // should hit cache
     assert.equal(mock.getCalls, 0);
   });
 
   it('write-populate: set warms cache for next get', async () => {
     const data = new Map<string, NodeData>();
     const mock = createMockTrpc(data);
-    const store = withCache(createRemoteTree(mock as any));
+    const tree = withCache(createRemoteTree(mock as any));
 
-    await store.set({ $path: '/a', $type: 'test', v: 1 } as NodeData);
+    await tree.set({ $path: '/a', $type: 'test', v: 1 } as NodeData);
     mock.resetCalls();
 
-    const node = await store.get('/a'); // should hit cache (write-populated)
+    const node = await tree.get('/a'); // should hit cache (write-populated)
     assert.equal(mock.getCalls, 0);
     assert.equal((node as any).v, 1);
   });
@@ -130,10 +130,10 @@ describe('withCache(remoteStore) — client pipeline', () => {
     const data = new Map<string, NodeData>();
     data.set('/a', { $path: '/a', $type: 'test', v: 99 } as NodeData);
     const mock = createMockTrpc(data);
-    const store = withCache(createRemoteTree(mock as any));
+    const tree = withCache(createRemoteTree(mock as any));
 
     const results = await Promise.all(
-      Array.from({ length: 5 }, () => store.get('/a')),
+      Array.from({ length: 5 }, () => tree.get('/a')),
     );
 
     assert.equal(mock.getCalls, 1);

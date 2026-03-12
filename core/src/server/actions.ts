@@ -4,7 +4,7 @@
 
 import { chain, type Chain } from '#chain';
 import { Class, type TypeProxy } from '#comp';
-import { makeTypedProxy, type ExecuteFn, type StreamFn } from '#comp/handle';
+import { type ExecuteFn, makeTypedProxy, type StreamFn } from '#comp/handle';
 import { collectDeps as _collectDeps, type ResolvedDeps } from '#comp/needs';
 import { type ComponentData, getComponentField, isComponent, type NodeData, register, resolve } from '#core';
 import { type Tree } from '#tree';
@@ -16,7 +16,7 @@ export type NodeHandle = ReturnType<typeof serverNodeHandle>;
 /** @opaque Runtime-injected, not part of public schema */
 export type ActionCtx = {
   node: NodeData;
-  store: Tree;
+  tree: Tree;
   signal: AbortSignal;
   /** Typed client for cross-node action calls: ctx.nc(path).get(Type).method(data) */
   nc: NodeHandle;
@@ -40,11 +40,11 @@ export function createNodeHandle(
   });
 }
 // Server-side typed node client: wraps executeAction/executeStream into createNodeHandle.
-// Usage: const nc = serverNodeHandle(store); await nc(path).get(MyComp).myMethod();
-export function serverNodeHandle(store: Tree) {
+// Usage: const nc = serverNodeHandle(tree); await nc(path).get(MyComp).myMethod();
+export function serverNodeHandle(tree: Tree) {
   return createNodeHandle(
-    (input) => executeAction(store, input.path, input.type, input.key, input.action, input.data),
-    (input) => executeStream(store, input.path, input.type, input.key, input.action, input.data),
+    (input) => executeAction(tree, input.path, input.type, input.key, input.action, input.data),
+    (input) => executeStream(tree, input.path, input.type, input.key, input.action, input.data),
   );
 }
 
@@ -79,12 +79,12 @@ type ResolvedAction = {
 // Code is compiled with new Function, registered for future calls.
 // Format: actions.{name} = "const node = ...; return result;"  (async function body)
 async function loadDynamicAction(
-  store: Tree, type: string, action: string,
+  tree: Tree, type: string, action: string,
 ): Promise<((ctx: ActionCtx, data: unknown) => unknown) | null> {
   if (!type.includes('.')) return null;
 
   const typePath = `/sys/types/${type.replace(/\./g, '/')}`;
-  const typeNode = await store.get(typePath);
+  const typeNode = await tree.get(typePath);
   const actionCode = (typeNode as any)?.actions?.[action];
   if (!actionCode || typeof actionCode !== 'string') return null;
 
@@ -101,13 +101,13 @@ async function loadDynamicAction(
 }
 
 async function resolveActionHandler(
-  store: Tree,
+  tree: Tree,
   path: string,
   componentType: string | undefined,
   componentKey: string | undefined,
   action: string,
 ): Promise<ResolvedAction> {
-  const node = await store.get(path);
+  const node = await tree.get(path);
   if (!node) throw new OpError('NOT_FOUND', `Node not found: ${path}`);
 
   const [comp, fieldKey] = getComponentField(node, componentType ?? 't.any', componentKey) ?? [];
@@ -115,12 +115,12 @@ async function resolveActionHandler(
 
   const type = comp.$type;
 
-  let deps: ResolvedDeps = await _collectDeps(node, fieldKey!, action, store);
+  let deps: ResolvedDeps = await _collectDeps(node, fieldKey!, action, tree);
 
   let handler = resolve(type, `action:${action}`);
 
   // Fallback: try loading dynamic action from type definition node
-  if (!handler) handler = await loadDynamicAction(store, type, action);
+  if (!handler) handler = await loadDynamicAction(tree, type, action);
   if (!handler) throw new OpError('BAD_REQUEST', `No action "${action}" for type "${type}"`);
 
   return { node, handler, type, comp, deps, fieldKey };
@@ -131,7 +131,7 @@ async function resolveActionHandler(
 // Pure actions (no state changes) skip persist — patches.length === 0.
 
 export async function executeAction(
-  store: Tree,
+  tree: Tree,
   path: string,
   componentType: string | undefined,
   componentKey: string | undefined,
@@ -139,7 +139,7 @@ export async function executeAction(
   data?: unknown,
 ): Promise<unknown> {
   const { node, handler, type, deps, fieldKey } = await resolveActionHandler(
-    store, path, componentType, componentKey, action,
+    tree, path, componentType, componentKey, action,
   );
 
   // Pre/post condition checking (Design by Contract)
@@ -162,8 +162,8 @@ export async function executeAction(
   // comp must be the draft version so Immer captures mutations via `this.*`
   const dc = fieldKey ? draft[fieldKey] : undefined;
   const draftComp = isComponent(dc) ? dc as ComponentData : undefined;
-  const nc = serverNodeHandle(store);
-  const actx: ActionCtx = { node: draft, comp: draftComp, deps, store, signal: AbortSignal.timeout(ACTION_TIMEOUT), nc };
+  const nc = serverNodeHandle(tree);
+  const actx: ActionCtx = { node: draft, comp: draftComp, deps, tree, signal: AbortSignal.timeout(ACTION_TIMEOUT), nc };
   const result = await handler(actx, data ?? {});
 
   let patches: Patch[] = [];
@@ -176,15 +176,15 @@ export async function executeAction(
     }
   }
 
-  if (patches.length > 0) await store.set({ ...nextNode, $patches: patches } as NodeData);
+  if (patches.length > 0) await tree.set({ ...nextNode, $patches: patches } as NodeData);
   return result;
 }
 
 // ── executeStream: generator action — yields multiple values, no Immer draft ──
-// Generator actions persist via store.set() directly inside the generator body.
+// Generator actions persist via tree.set() directly inside the generator body.
 
 export async function* executeStream(
-  store: Tree,
+  tree: Tree,
   path: string,
   componentType: string | undefined,
   componentKey: string | undefined,
@@ -193,11 +193,11 @@ export async function* executeStream(
   signal?: AbortSignal,
 ): AsyncGenerator<unknown> {
   const { node, handler, comp, deps } = await resolveActionHandler(
-    store, path, componentType, componentKey, action,
+    tree, path, componentType, componentKey, action,
   );
   // comp is already node[fieldKey] from resolution — no Immer draft needed for generators
-  const nc = serverNodeHandle(store);
-  const actx: ActionCtx = { node, comp, deps, store, signal: signal ?? AbortSignal.timeout(STREAM_TIMEOUT), nc };
+  const nc = serverNodeHandle(tree);
+  const actx: ActionCtx = { node, comp, deps, tree, signal: signal ?? AbortSignal.timeout(STREAM_TIMEOUT), nc };
   const result = handler(actx, data ?? {});
   if (!result || typeof (result as any)[Symbol.asyncIterator] !== 'function')
     throw new OpError('BAD_REQUEST', `Action "${action}" is not a generator`);
@@ -207,42 +207,42 @@ export async function* executeStream(
 // ── setComponent: single component update with OCC ──
 
 export async function setComponent(
-  store: Tree,
+  tree: Tree,
   path: string,
   name: string,
   data: Record<string, unknown>,
   rev?: number,
 ): Promise<void> {
-  const node = await store.get(path);
+  const node = await tree.get(path);
   if (!node) throw new OpError('NOT_FOUND', `Node not found: ${path}`);
 
   if (rev != null && node.$rev != null && rev !== node.$rev)
     throw new OpError('CONFLICT', `Stale revision: expected ${rev}, got ${node.$rev}`);
 
   node[name] = data;
-  await store.set(node);
+  await tree.set(node);
 }
 
 // ── applyTemplate: copy template children to target path ──
 
 export async function applyTemplate(
-  store: Tree,
+  tree: Tree,
   templatePath: string,
   targetPath: string,
 ): Promise<{ applied: string; blocks: number }> {
-  const tmpl = await store.get(templatePath);
+  const tmpl = await tree.get(templatePath);
   if (!tmpl) throw new OpError('NOT_FOUND', `Template not found: ${templatePath}`);
 
-  const { items: blocks } = await store.getChildren(templatePath);
-  const { items: existing } = await store.getChildren(targetPath);
+  const { items: blocks } = await tree.getChildren(templatePath);
+  const { items: existing } = await tree.getChildren(targetPath);
 
-  for (const child of existing) await store.remove(child.$path);
+  for (const child of existing) await tree.remove(child.$path);
 
   for (const block of blocks) {
     const bname = block.$path.slice(block.$path.lastIndexOf('/') + 1);
     const bpath = targetPath === '/' ? `/${bname}` : `${targetPath}/${bname}`;
     const { $rev, ...rest } = block;
-    await store.set({ ...rest, $path: bpath });
+    await tree.set({ ...rest, $path: bpath });
   }
 
   return { applied: tmpl.$path, blocks: blocks.length };

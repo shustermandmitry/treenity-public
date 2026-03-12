@@ -30,13 +30,13 @@ export class SystemActions {
 
   /** @description Compile JSX view source. With source: compile + save to type node. Without: check existing */
   async compile_view(data: { /** JSX source code */ source?: string; /** Type node path */ path?: string }) {
-    const { store } = getCtx();
+    const { tree } = getCtx();
     const targetPath = data.path;
 
     let code = data.source;
     if (!code) {
       if (!targetPath) throw new Error('source or path required');
-      const node = await store.get(targetPath);
+      const node = await tree.get(targetPath);
       if (!node) throw new Error(`not found: ${targetPath}`);
       code = (node as any)?.view?.source;
       if (!code) throw new Error(`no view.source on ${targetPath}`);
@@ -46,10 +46,10 @@ export class SystemActions {
     if (!check.ok) return check;
 
     if (data.source && targetPath) {
-      const node = await store.get(targetPath);
+      const node = await tree.get(targetPath);
       if (node) {
         (node as any).view = { ...((node as any).view ?? {}), source: data.source };
-        await store.set(node);
+        await tree.set(node);
         return { ok: true, saved: targetPath };
       }
     }
@@ -62,8 +62,8 @@ export class SystemActions {
     /** Target path where nodes will be created */ target: string;
     /** Allow writing outside target */ allowAbsolute?: boolean;
   }) {
-    const { store } = getCtx();
-    return deployPrefab(store, data.source, data.target, { allowAbsolute: !!data.allowAbsolute });
+    const { tree } = getCtx();
+    return deployPrefab(tree, data.source, data.target, { allowAbsolute: !!data.allowAbsolute });
   }
 }
 

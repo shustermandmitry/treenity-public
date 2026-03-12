@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { describeTree, exportSchemaForLLM } from '.';
 
-function makeCtx(store: ReturnType<typeof createMemoryTree>, node: NodeData): ActionCtx {
-  const nc = serverNodeHandle(store);
-  return { node, store, signal: AbortSignal.timeout(5000), nc };
+function makeCtx(tree: ReturnType<typeof createMemoryTree>, node: NodeData): ActionCtx {
+  const nc = serverNodeHandle(tree);
+  return { node, tree, signal: AbortSignal.timeout(5000), nc };
 }
 
 describe('exportSchemaForLLM', () => {
@@ -57,14 +57,14 @@ describe('describeTree', () => {
   beforeEach(() => clearRegistry());
 
   it('renders tree structure', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const root = createNode('/', 'root');
-    await store.set(root);
-    await store.set(createNode('/pages', 'dir'));
-    await store.set(createNode('/pages/main', 'page'));
-    await store.set(createNode('/users', 'dir'));
+    await tree.set(root);
+    await tree.set(createNode('/pages', 'dir'));
+    await tree.set(createNode('/pages/main', 'page'));
+    await tree.set(createNode('/users', 'dir'));
 
-    const text = await describeTree(makeCtx(store, root), { depth: 3 });
+    const text = await describeTree(makeCtx(tree, root), { depth: 3 });
     assert.ok(text.includes('/ (t.root)'));
     assert.ok(text.includes('  pages (t.dir)'));
     assert.ok(text.includes('    main (t.page)'));
@@ -72,37 +72,37 @@ describe('describeTree', () => {
   });
 
   it('respects depth limit', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const root = createNode('/', 'root');
-    await store.set(root);
-    await store.set(createNode('/a', 'dir'));
-    await store.set(createNode('/a/b', 'dir'));
-    await store.set(createNode('/a/b/c', 'item'));
+    await tree.set(root);
+    await tree.set(createNode('/a', 'dir'));
+    await tree.set(createNode('/a/b', 'dir'));
+    await tree.set(createNode('/a/b/c', 'item'));
 
-    const text = await describeTree(makeCtx(store, root), { depth: 1 });
+    const text = await describeTree(makeCtx(tree, root), { depth: 1 });
     assert.ok(text.includes('a (t.dir)'));
     assert.ok(!text.includes('b (t.dir)'));
   });
 
   it('describes subtree from given node', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const pages = createNode('/pages', 'dir');
-    await store.set(pages);
-    await store.set(createNode('/pages/main', 'page'));
+    await tree.set(pages);
+    await tree.set(createNode('/pages/main', 'page'));
 
-    const text = await describeTree(makeCtx(store, pages), {});
+    const text = await describeTree(makeCtx(tree, pages), {});
     assert.ok(text.startsWith('/pages (t.dir)'));
     assert.ok(text.includes('main (t.page)'));
   });
 
   it('sorts children alphabetically', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const root = createNode('/', 'root');
-    await store.set(root);
-    await store.set(createNode('/zebra', 'animal'));
-    await store.set(createNode('/apple', 'fruit'));
+    await tree.set(root);
+    await tree.set(createNode('/zebra', 'animal'));
+    await tree.set(createNode('/apple', 'fruit'));
 
-    const text = await describeTree(makeCtx(store, root), { depth: 1 });
+    const text = await describeTree(makeCtx(tree, root), { depth: 1 });
     const lines = text.split('\n');
     assert.ok(lines.indexOf('  apple (t.fruit)') < lines.indexOf('  zebra (t.animal)'));
   });

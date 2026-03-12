@@ -19,7 +19,7 @@ register('whisper.inbox', 'service', async (node, ctx) => {
   const sent = new Set<string>();
 
   // Mark existing COMPLETED transcriptions as already processed
-  const { items } = await ctx.store.getChildren(config.source);
+  const { items } = await ctx.tree.getChildren(config.source);
   for (const child of items) {
     if (child.$type !== 'whisper.transcription') continue;
     if (getText(child)) sent.add(child.$path);
@@ -29,7 +29,7 @@ register('whisper.inbox', 'service', async (node, ctx) => {
   const unsub = ctx.subscribe(config.source, (event) => {
     if (event.type !== 'set' && event.type !== 'patch') return;
 
-    ctx.store.get(event.path).then(async (n) => {
+    ctx.tree.get(event.path).then(async (n) => {
       if (!n || n.$type !== 'whisper.transcription') return;
       if (sent.has(n.$path)) return;
 
@@ -40,7 +40,7 @@ register('whisper.inbox', 'service', async (node, ctx) => {
 
       const taskId = `t-${Date.now()}`;
       const taskPath = `${config.target}/tasks/${taskId}`;
-      await ctx.store.set(createNode(taskPath, 'agent.task', {
+      await ctx.tree.set(createNode(taskPath, 'agent.task', {
         prompt: text,
         status: 'pending',
         createdAt: Date.now(),

@@ -3,7 +3,7 @@
 // ACL security (no leaked data), and action return values.
 
 import { registerType } from '#comp';
-import { createNode, R, S, W, register } from '#core';
+import { createNode, R, register, S, W } from '#core';
 import { createMemoryTree } from '#tree';
 import assert from 'node:assert/strict';
 import type { Socket } from 'node:net';
@@ -350,11 +350,11 @@ describe('e2e: tRPC over HTTP', () => {
   describe('ACL security', () => {
     it('unauthenticated cannot read private nodes', async () => {
       const pub = createClient(url);
-      await ts.store.set({
+      await ts.tree.set({
         ...createNode('/secret', 'folder'),
         $acl: [{ g: 'admins', p: R | W }, { g: 'public', p: 0 }],
       });
-      await ts.store.set(createNode('/secret/data', 'doc'));
+      await ts.tree.set(createNode('/secret/data', 'doc'));
 
       const node = await pub.get.query({ path: '/secret/data' });
       assert.equal(node, undefined, 'Public should not see private node');
@@ -362,7 +362,7 @@ describe('e2e: tRPC over HTTP', () => {
 
     it('unauthenticated cannot write to private paths', async () => {
       const pub = createClient(url);
-      await ts.store.set({
+      await ts.tree.set({
         ...createNode('/private', 'folder'),
         $acl: [{ g: 'admins', p: R | W }, { g: 'public', p: 0 }],
       });
@@ -375,9 +375,9 @@ describe('e2e: tRPC over HTTP', () => {
 
     it('getChildren does not leak private children', async () => {
       const pub = createClient(url);
-      await ts.store.set(createNode('/mix', 'folder'));
-      await ts.store.set(createNode('/mix/public', 'doc'));
-      await ts.store.set({
+      await ts.tree.set(createNode('/mix', 'folder'));
+      await ts.tree.set(createNode('/mix/public', 'doc'));
+      await ts.tree.set({
         ...createNode('/mix/private', 'doc'),
         $acl: [{ g: 'admins', p: R | W }, { g: 'public', p: 0 }],
       });
@@ -394,13 +394,13 @@ describe('e2e: tRPC over HTTP', () => {
       const bob = await pub.register.mutate({ userId: 'bob-sec', password: 'pass' });
 
       // Make alice an admin
-      await ts.store.set({
+      await ts.tree.set({
         ...createNode('/auth/groups/admins', 'group'),
         members: { $type: 'members', list: ['alice-sec'] },
       });
 
       // Create a private node only admins can see
-      await ts.store.set({
+      await ts.tree.set({
         ...createNode('/classified', 'doc'),
         $acl: [{ g: 'admins', p: R | W | S }, { g: 'public', p: 0 }],
       });
@@ -418,7 +418,7 @@ describe('e2e: tRPC over HTTP', () => {
       await bobClient.get.query({ path: '/', watch: true });
 
       // Mutate classified — bob should NOT see this
-      await ts.store.set({ ...createNode('/classified', 'doc'), updated: true });
+      await ts.tree.set({ ...createNode('/classified', 'doc'), updated: true });
       await new Promise(r => setTimeout(r, 200));
 
       const received = await bobEvents;
@@ -431,7 +431,7 @@ describe('e2e: tRPC over HTTP', () => {
       const reg = await pub.register.mutate({ userId: 'viewer', password: 'pass' });
       const viewer = createClient(url, reg.token);
 
-      await ts.store.set({
+      await ts.tree.set({
         ...createNode('/owned', 'doc'),
         $owner: 'someadmin',
         $acl: [{ g: 'authenticated', p: R | S }],

@@ -2,8 +2,11 @@
 // Each action type gets: icon helper, summary helper, full editor, list item
 
 import type { NodeData } from '@treenity/core';
+import { Button } from '@treenity/react/components/ui/button';
 import { Checkbox } from '@treenity/react/components/ui/checkbox';
 import { Input } from '@treenity/react/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@treenity/react/components/ui/select';
+import { Textarea } from '@treenity/react/components/ui/textarea';
 import { set, usePath } from '@treenity/react/hooks';
 import { trpc } from '@treenity/react/trpc';
 import {
@@ -221,11 +224,15 @@ export function QuestionEditor({ value }: { value: NodeData }) {
       </FieldRow>
 
       <FieldRow label="Input type">
-        <select className="h-8 text-sm border border-border rounded-md bg-background px-2"
-          value={q.inputType} onChange={e => update({ inputType: e.target.value })}>
-          <option value="text">Text</option>
-          <option value="photo">Photo</option>
-        </select>
+        <Select value={q.inputType} onValueChange={v => update({ inputType: v })}>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="text">Text</SelectItem>
+            <SelectItem value="photo">Photo</SelectItem>
+          </SelectContent>
+        </Select>
       </FieldRow>
 
       <FieldRow label="Save to">
@@ -419,15 +426,19 @@ export function FileEditor({ value }: { value: NodeData }) {
           value={f.fileId} onChange={e => update({ fileId: e.target.value })} />
       </FieldRow>
       <FieldRow label="Send as">
-        <select className="h-8 text-sm border border-border rounded-md bg-background px-2"
-          value={f.asType} onChange={e => update({ asType: e.target.value })}>
-          <option value="">Auto-detect</option>
-          <option value="photo">Photo</option>
-          <option value="document">Document</option>
-          <option value="video">Video</option>
-          <option value="audio">Audio</option>
-          <option value="voice">Voice</option>
-        </select>
+        <Select value={f.asType ?? ''} onValueChange={v => update({ asType: v })}>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Auto-detect</SelectItem>
+            <SelectItem value="photo">Photo</SelectItem>
+            <SelectItem value="document">Document</SelectItem>
+            <SelectItem value="video">Video</SelectItem>
+            <SelectItem value="audio">Audio</SelectItem>
+            <SelectItem value="voice">Voice</SelectItem>
+          </SelectContent>
+        </Select>
       </FieldRow>
     </div>
   );
@@ -443,9 +454,9 @@ export function EvalEditor({ value }: { value: NodeData }) {
   return (
     <div className="space-y-4 max-w-2xl">
       <FieldRow label="JavaScript">
-        <textarea
-          className="w-full h-40 text-sm font-mono border border-border rounded-md bg-background p-2 resize-y"
-          placeholder="// async function body&#10;await ctx.reply('Hello');"
+        <Textarea
+          className="h-40 font-mono text-sm resize-y"
+          placeholder={"// async function body\nawait ctx.reply('Hello');"}
           value={ev.value}
           onChange={e => update({ value: e.target.value })}
         />
@@ -571,16 +582,15 @@ export function KeywordSelectEditor({ value }: { value: NodeData }) {
               <Input className="font-mono" placeholder="/command or reply text"
                 value={el.message} onChange={e => updateElement(i, { message: e.target.value })} />
             </div>
-            <button onClick={() => removeElement(i)}
-              className="text-muted-foreground hover:text-destructive p-1">
+            <Button variant="ghost" size="sm" onClick={() => removeElement(i)}
+              className="text-muted-foreground hover:text-destructive p-1 h-auto">
               <Trash2 className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         ))}
-        <button onClick={addElement}
-          className="text-xs text-primary hover:underline">
+        <Button variant="link" size="sm" onClick={addElement} className="text-xs p-0 h-auto">
           + Add keyword entry
-        </button>
+        </Button>
       </div>
     </div>
   );

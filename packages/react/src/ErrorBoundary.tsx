@@ -1,3 +1,4 @@
+import { Button } from '#components/ui/button';
 import { Component, type ReactNode } from 'react';
 
 type Props = {
@@ -10,12 +11,14 @@ type State = { error: string | null };
 const defaultFallback = (error: string, reset: () => void) => (
   <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-[11px]">
     <div className="text-destructive font-mono break-all">{error}</div>
-    <button
-      className="mt-1 text-[10px] text-muted-foreground hover:text-foreground underline"
+    <Button
+      variant="link"
+      size="sm"
+      className="mt-1 h-auto p-0 text-[10px] text-muted-foreground hover:text-foreground underline"
       onClick={reset}
     >
       Retry
-    </button>
+    </Button>
   </div>
 );
 

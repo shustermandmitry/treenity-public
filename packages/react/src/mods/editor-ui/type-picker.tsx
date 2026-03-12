@@ -1,6 +1,7 @@
 import { Button } from '#components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '#components/ui/command';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '#components/ui/dialog';
+import { Input } from '#components/ui/input';
 import { trpc } from '#trpc';
 import { isOfType, type NodeData } from '@treenity/core';
 import { useEffect, useRef, useState } from 'react';
@@ -123,9 +124,9 @@ export function TypePicker({
         </Command>
 
         <div className="px-4 py-3 border-t border-border">
-          <input
+          <Input
             ref={nameRef}
-            className="w-full"
+            className="h-8 text-sm"
             placeholder={nameLabel}
             value={name}
             onChange={(e) => { setName(e.target.value); setNameManual(true); }}

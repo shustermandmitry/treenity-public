@@ -1,5 +1,5 @@
 // Treenity Types Mount — Layer 4
-// Union of registry (code-defined types) + backing store (dynamic types)
+// Union of registry (code-defined types) + backing tree (dynamic types)
 
 import { type ComponentData, createNode, getContextsForType, getRegisteredTypes, type NodeData, resolve } from '#core';
 import { paginate, type Tree } from '#tree';
@@ -32,14 +32,14 @@ export function createTypesStore(backingStore: Tree, typesPath = '/sys/types'): 
     return createNode(toPath(typeName), 'type', undefined, components);
   }
 
-  // Merge registry node with backing store node — registry wins for code-defined
-  // components, backing store adds dynamic components (view, actions from AI agent)
+  // Merge registry node with backing tree node — registry wins for code-defined
+  // components, backing tree adds dynamic components (view, actions from AI agent)
   async function mergedTypeNode(typeName: string): Promise<NodeData | undefined> {
     const fromRegistry = typeNode(typeName);
     if (!fromRegistry) return undefined;
     const fromStore = await backingStore.get(fromRegistry.$path);
     if (!fromStore) return fromRegistry;
-    // Backing store fields first, registry overwrites (code-defined always wins)
+    // Backing tree fields first, registry overwrites (code-defined always wins)
     return { ...fromStore, ...fromRegistry };
   }
 
@@ -61,7 +61,7 @@ export function createTypesStore(backingStore: Tree, typesPath = '/sys/types'): 
       const prefix = path === typesPath ? '' : toType(path) + '.';
       const types = getRegisteredTypes();
       const byPath = new Map<string, NodeData>();
-      // Backing store — scan deep to discover category folders, synthesize intermediate dirs
+      // Backing tree — scan deep to discover category folders, synthesize intermediate dirs
       const backingItems = (await backingStore.getChildren(path, { depth: Infinity })).items;
       for (const n of backingItems) {
         const rel = path === '/' ? n.$path.slice(1) : n.$path.slice(path.length + 1);
@@ -74,7 +74,7 @@ export function createTypesStore(backingStore: Tree, typesPath = '/sys/types'): 
           if (!byPath.has(dirPath)) byPath.set(dirPath, createNode(dirPath, 'dir'));
         }
       }
-      // Registry types — merge with backing store data (dynamic views, actions)
+      // Registry types — merge with backing tree data (dynamic views, actions)
       const seenDirs = new Set<string>();
       for (const t of types) {
         if (prefix && !t.startsWith(prefix)) continue;
@@ -89,7 +89,7 @@ export function createTypesStore(backingStore: Tree, typesPath = '/sys/types'): 
         const rest = prefix ? t.slice(prefix.length) : t;
         const parts = rest.split('.');
         if (parts.length === 1) {
-          // Direct child leaf type — merge with any backing store data
+          // Direct child leaf type — merge with any backing tree data
           const reg = typeNode(t);
           if (reg) {
             const stored = byPath.get(reg.$path);
@@ -103,7 +103,7 @@ export function createTypesStore(backingStore: Tree, typesPath = '/sys/types'): 
             const folderPath = `${path}/${cat}`;
             byPath.set(folderPath, createNode(folderPath, 'dir'));
           }
-          // Deep types — emit when depth allows, merge with backing store
+          // Deep types — emit when depth allows, merge with backing tree
           if (depth > 1) {
             const reg = typeNode(t);
             if (reg) {

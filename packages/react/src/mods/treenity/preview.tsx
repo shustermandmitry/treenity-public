@@ -1,5 +1,6 @@
 // Reusable type preview — Storybook-like: context switcher + live render + schema form editor
 
+import { Button } from '#components/ui/button';
 import { Render, RenderContext } from '#context';
 import { type ComponentData, getContextsForType, type NodeData } from '@treenity/core';
 import { useMemo, useState } from 'react';
@@ -94,17 +95,15 @@ export function TypePreview({ typeName, properties }: {
     <div>
       <div className="flex gap-1.5 mb-2">
         {reactContexts.map(c => (
-          <button
+          <Button
             key={c}
+            variant={previewCtx === c ? 'default' : 'outline'}
+            size="sm"
+            className="h-auto rounded-full px-2.5 py-0.5 text-xs font-mono"
             onClick={() => setPreviewCtx(prev => prev === c ? null : c)}
-            className={`px-2.5 py-0.5 rounded-full text-xs font-mono border cursor-pointer transition-colors ${
-              previewCtx === c
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-muted border-border text-muted-foreground hover:border-primary/50'
-            }`}
           >
             {c}
-          </button>
+          </Button>
         ))}
       </div>
 

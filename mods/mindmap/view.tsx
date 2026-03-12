@@ -1,57 +1,56 @@
 // MindMap View — Miro-style horizontal tree with organic curves
-// Activated by adding mindmap.map component to any node
+// Each node fetches its own children via useChildren when expanded
 
+import type { NodeData } from '@treenity/core';
 import { register } from '@treenity/core';
 import type { View } from '@treenity/react/context';
+import { useChildren } from '@treenity/react/hooks';
+import { trpc } from '@treenity/react/trpc';
+import { select } from 'd3-selection';
+import 'd3-transition';
+import { zoom as d3zoom, type ZoomBehavior, zoomIdentity } from 'd3-zoom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MindMapTree } from './radial-tree';
+import { type EditingAt, MindMapBranch, MindMapCtx, type MindMapState } from './branch';
 import { MindMapSidebar } from './sidebar';
 import type { MindMapConfig } from './types';
-import { type TreeItem, useTreeData } from './use-tree-data';
 import './mindmap.css';
-
-const DEFAULT_DIMS = { w: 800, h: 600 };
 
 const PALETTE = [
   '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6',
   '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#84cc16',
 ];
 
-function buildBranchColors(tree: TreeItem | null): Map<string, string> {
-  const colors = new Map<string, string>();
-  if (!tree) return colors;
+const LEVEL_W = 200;
+const SPACING = 36;
 
-  colors.set(tree.path, 'var(--text)');
-  tree.children.forEach((child, i) => {
-    assignColor(child, PALETTE[i % PALETTE.length], colors);
-  });
-
-  return colors;
+function sCurve(dx: number, dy: number): string {
+  const cx = dx * 0.5;
+  return `M0,0 C${cx},0 ${cx},${dy} ${dx},${dy}`;
 }
 
-function assignColor(item: TreeItem, color: string, map: Map<string, string>) {
-  map.set(item.path, color);
-  for (const child of item.children) assignColor(child, color, map);
-}
-
-function findComp(node: Record<string, unknown>, type: string): Record<string, unknown> | null {
-  for (const [k, v] of Object.entries(node)) {
-    if (k.startsWith('$')) continue;
-    if (typeof v === 'object' && v !== null && (v as Record<string, unknown>).$type === type) {
-      return v as Record<string, unknown>;
-    }
-  }
-  return null;
+function basename(path: string): string {
+  if (path === '/') return '/';
+  const i = path.lastIndexOf('/');
+  return i < 0 ? path : path.slice(i + 1);
 }
 
 const MindMapView: View<MindMapConfig> = ({ value, ctx }) => {
-  const config = findComp(value as Record<string, unknown>, 'mindmap.map');
-  const rootPath = ((config?.root as string) || ctx!.path) as string;
-  const maxChildren = (config?.maxChildren as number) ?? 50;
+  const rootPath = value.root || ctx?.node?.$path || '/';
+  const rootName = basename(rootPath);
+
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([rootPath]));
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [editingAt, setEditingAt] = useState<EditingAt>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dims, setDims] = useState(DEFAULT_DIMS);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const gRef = useRef<SVGGElement>(null);
+  const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const [dims, setDims] = useState({ w: 800, h: 600 });
+
+  const rootChildren = useChildren(rootPath, { watch: true, watchNew: true });
+
+  const left = useMemo(() => rootChildren.filter((_, i) => i % 2 === 1), [rootChildren]);
+  const right = useMemo(() => rootChildren.filter((_, i) => i % 2 === 0), [rootChildren]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -63,12 +62,38 @@ const MindMapView: View<MindMapConfig> = ({ value, ctx }) => {
     return () => ro.disconnect();
   }, []);
 
-  const tree = useTreeData(rootPath, expanded, maxChildren);
-  const branchColors = useMemo(() => buildBranchColors(tree), [tree]);
+  useEffect(() => {
+    if (!svgRef.current || !gRef.current) return;
+    const svg = select(svgRef.current);
+    const g = select(gRef.current);
 
-  const handleSelect = useCallback((path: string) => {
-    setSelectedPath(prev => prev === path ? null : path);
-  }, []);
+    const zoomBehavior = d3zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on('zoom', event => g.attr('transform', event.transform.toString()));
+
+    svg.call(zoomBehavior);
+    svg.call(zoomBehavior.transform, zoomIdentity.translate(dims.w / 2, dims.h / 2).scale(0.85));
+    zoomRef.current = zoomBehavior;
+
+    return () => { svg.on('.zoom', null); };
+  }, [dims.w, dims.h]);
+
+  const fitView = useCallback(() => {
+    if (!svgRef.current || !zoomRef.current || !gRef.current) return;
+    const svg = select(svgRef.current);
+    const bounds = gRef.current.getBBox();
+    if (!bounds.width || !bounds.height) return;
+
+    const pad = 60;
+    const scale = Math.min((dims.w - pad * 2) / bounds.width, (dims.h - pad * 2) / bounds.height, 1.5);
+    const tx = dims.w / 2 - (bounds.x + bounds.width / 2) * scale;
+    const ty = dims.h / 2 - (bounds.y + bounds.height / 2) * scale;
+
+    svg.transition().duration(400).call(
+      zoomRef.current.transform,
+      zoomIdentity.translate(tx, ty).scale(scale),
+    );
+  }, [dims.w, dims.h]);
 
   const handleToggle = useCallback((path: string) => {
     setExpanded(prev => {
@@ -84,6 +109,10 @@ const MindMapView: View<MindMapConfig> = ({ value, ctx }) => {
     });
   }, []);
 
+  const handleSelect = useCallback((path: string) => {
+    setSelectedPath(prev => prev === path ? null : path);
+  }, []);
+
   const handleCloseSidebar = useCallback(() => setSelectedPath(null), []);
 
   const handleNavigate = useCallback((path: string) => {
@@ -91,53 +120,154 @@ const MindMapView: View<MindMapConfig> = ({ value, ctx }) => {
     window.dispatchEvent(new PopStateEvent('popstate'));
   }, []);
 
+  const handleAddChild = useCallback((parentPath: string, side: 'left' | 'right', color: string) => {
+    setEditingAt({ parentPath, side, color });
+    setExpanded(prev => new Set([...prev, parentPath]));
+  }, []);
+
+  const handleCommitAdd = useCallback((parentPath: string, name: string) => {
+    const childPath = `${parentPath}/${name}`;
+    trpc.set.mutate({ node: { $path: childPath, $type: 'dir' } as NodeData });
+    setEditingAt(null);
+  }, []);
+
+  const handleCancelAdd = useCallback(() => setEditingAt(null), []);
+
+  const handleDelete = useCallback((path: string) => {
+    if (path === rootPath) return;
+    if (!confirm(`Delete ${basename(path)}?`)) return;
+    trpc.remove.mutate({ path });
+    setSelectedPath(null);
+  }, [rootPath]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      if (e.key === 'Enter' && selectedPath) {
+      if (e.key === 'Enter' && selectedPath) { e.preventDefault(); handleToggle(selectedPath); }
+      if (e.key === 'Escape') setSelectedPath(null);
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPath && selectedPath !== rootPath) {
         e.preventDefault();
-        handleToggle(selectedPath);
+        handleDelete(selectedPath);
       }
-      if (e.key === 'Backspace' && selectedPath) {
+      if (e.key === 'Tab' && selectedPath && !editingAt) {
         e.preventDefault();
-        if (expanded.has(selectedPath)) {
-          handleToggle(selectedPath);
-        } else {
-          const parentIdx = selectedPath.lastIndexOf('/');
-          const parent = parentIdx <= 0 ? '/' : selectedPath.slice(0, parentIdx);
-          setSelectedPath(parent);
-        }
-      }
-      if (e.key === 'Escape') {
-        setSelectedPath(null);
+        handleAddChild(selectedPath, 'right', PALETTE[0]);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedPath, expanded, handleToggle]);
+  }, [selectedPath, handleToggle, handleDelete, handleAddChild, rootPath, editingAt]);
 
-  if (!tree) {
-    return (
-      <div className="mm-container" ref={containerRef}>
-        <div className="flex items-center justify-center flex-1 text-[var(--text-3)] text-sm">
-          Loading tree...
-        </div>
-      </div>
-    );
-  }
+  const mmState: MindMapState = useMemo(
+    () => ({
+      expanded, selectedPath, editingAt,
+      onToggle: handleToggle, onSelect: handleSelect,
+      onAddChild: handleAddChild, onCommitAdd: handleCommitAdd, onCancelAdd: handleCancelAdd,
+      onDelete: handleDelete,
+    }),
+    [expanded, selectedPath, editingAt, handleToggle, handleSelect, handleAddChild, handleCommitAdd, handleCancelAdd, handleDelete],
+  );
+
+  const svgW = selectedPath ? dims.w - 280 : dims.w;
+  const rootW = rootName.length * 10 + 48;
 
   return (
     <div className="mm-container" ref={containerRef}>
-      <MindMapTree
-        data={tree}
-        selectedPath={selectedPath}
-        onSelect={handleSelect}
-        onToggle={handleToggle}
-        branchColors={branchColors}
-        width={selectedPath ? dims.w - 280 : dims.w}
-        height={dims.h}
-      />
+      <div className="mm-tree-wrap">
+        <div className="mm-toolbar">
+          <button className="mm-btn" onClick={fitView} title="Fit view">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+          </button>
+        </div>
+
+        <svg ref={svgRef} width={svgW} height={dims.h} className="mm-svg">
+          <MindMapCtx.Provider value={mmState}>
+            <g ref={gRef}>
+              {/* Curves from root to right children */}
+              {right.map((child, i) => {
+                const totalH = (right.length - 1) * SPACING;
+                const cy = -totalH / 2 + i * SPACING;
+                const color = PALETTE[(i * 2) % PALETTE.length];
+                return (
+                  <path
+                    key={`link-r-${child.$path}`}
+                    d={sCurve(LEVEL_W, cy)}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={3}
+                    strokeOpacity={0.6}
+                    strokeLinecap="round"
+                    className="mm-link"
+                  />
+                );
+              })}
+
+              {/* Curves from root to left children */}
+              {left.map((child, i) => {
+                const totalH = (left.length - 1) * SPACING;
+                const cy = -totalH / 2 + i * SPACING;
+                const color = PALETTE[(i * 2 + 1) % PALETTE.length];
+                return (
+                  <path
+                    key={`link-l-${child.$path}`}
+                    d={sCurve(-LEVEL_W, cy)}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={3}
+                    strokeOpacity={0.6}
+                    strokeLinecap="round"
+                    className="mm-link"
+                  />
+                );
+              })}
+
+              {/* Root — pill shape with solid bg */}
+              <g
+                className={`mm-node mm-root${selectedPath === rootPath ? ' mm-node-selected' : ''}`}
+                onClick={() => handleSelect(rootPath)}
+              >
+                <rect
+                  x={-rootW / 2}
+                  y={-20}
+                  width={rootW}
+                  height={40}
+                  rx={20}
+                  className="mm-root-bg"
+                />
+                <text textAnchor="middle" dominantBaseline="central" className="mm-root-label">
+                  {rootName}
+                </text>
+              </g>
+
+              {/* Right child nodes */}
+              {right.map((child, i) => {
+                const totalH = (right.length - 1) * SPACING;
+                const cy = -totalH / 2 + i * SPACING;
+                const color = PALETTE[(i * 2) % PALETTE.length];
+                return (
+                  <g key={child.$path} transform={`translate(${LEVEL_W},${cy})`}>
+                    <MindMapBranch node={child} side="right" color={color} depth={1} />
+                  </g>
+                );
+              })}
+
+              {/* Left child nodes */}
+              {left.map((child, i) => {
+                const totalH = (left.length - 1) * SPACING;
+                const cy = -totalH / 2 + i * SPACING;
+                const color = PALETTE[(i * 2 + 1) % PALETTE.length];
+                return (
+                  <g key={child.$path} transform={`translate(${-LEVEL_W},${cy})`}>
+                    <MindMapBranch node={child} side="left" color={color} depth={1} />
+                  </g>
+                );
+              })}
+            </g>
+          </MindMapCtx.Provider>
+        </svg>
+      </div>
 
       {selectedPath && (
         <MindMapSidebar

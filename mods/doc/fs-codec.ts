@@ -1,4 +1,4 @@
-// Markdown file ↔ doc.page node codec for FS store
+// Markdown file ↔ doc.page node codec for FS tree
 // Decode: .md file → doc.page node (title from first H1, content as Tiptap JSON)
 // Encode: doc.page node → .md file (Tiptap JSON → markdown)
 // Paths are extensionless — encode appends .md

@@ -20,7 +20,7 @@ export type TreenityConfig = {
   rootNode?: NodeData;
   dataDir?: string;
   modsDir?: string | false;
-  seed?: (store: Tree, ensure: Ensure) => Promise<void>;
+  seed?: (tree: Tree, ensure: Ensure) => Promise<void>;
   autostart?: boolean;
 };
 
@@ -68,7 +68,7 @@ export async function treenity(config?: TreenityConfig): Promise<TreenityServer>
 
   // 3. Build pipeline
   const pipeline = createPipeline(bootstrap);
-  const { store, mountable } = pipeline;
+  const { tree, mountable } = pipeline;
 
   // 4. Seed — if rootNode declares seeds, only deploy those mods
   if (config?.seed) {
@@ -81,7 +81,7 @@ export async function treenity(config?: TreenityConfig): Promise<TreenityServer>
   // 5. Wire log → tree
   addOnLog(entry => {
     const p = makeLogPath()
-    process.stderr.write(`[log→tree] ${p} ${entry.level}: ${entry.msg.slice(0, 60)}\n`)
+    // process.stderr.write(`[log→tree] ${p} ${entry.level}: ${entry.msg.slice(0, 60)}\n`)
     mountable.set({ $path: p, $type: 't.log', ...entry })
       .catch(e => process.stderr.write(`[log write err] ${e.message}\n`))
   })
@@ -89,7 +89,7 @@ export async function treenity(config?: TreenityConfig): Promise<TreenityServer>
   // 6. Autostart services
   let serviceHandle: ServiceHandle | null = null;
   if (autostart) {
-    serviceHandle = await startServices(store, store.subscribe.bind(store) as import('#contexts/service/index').ServiceCtx['subscribe']);
+    serviceHandle = await startServices(tree, tree.subscribe.bind(tree) as import('#contexts/service/index').ServiceCtx['subscribe']);
   }
 
   const stop = async () => {
@@ -97,7 +97,7 @@ export async function treenity(config?: TreenityConfig): Promise<TreenityServer>
   };
 
   return {
-    store: pipeline.store,
+    tree: pipeline.tree,
     mountable: pipeline.mountable,
     watcher: pipeline.watcher,
     router: pipeline.router,

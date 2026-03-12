@@ -30,12 +30,12 @@ export type Session = { userId: string; claims?: string[] };
 // Session nodes are stored as regular nodes with extra fields
 type SessionNode = NodeData & { userId: string; createdAt: number; expiresAt: number; claims?: string[] };
 
-// ── Sessions (store-backed, /auth/sessions/{token}) ──
+// ── Sessions (tree-backed, /auth/sessions/{token}) ──
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export async function createSession(
-  store: Tree,
+  tree: Tree,
   userId: string,
   opts?: { ttlMs?: number; claims?: string[] },
 ): Promise<string> {
@@ -46,27 +46,27 @@ export async function createSession(
     userId, createdAt: now, expiresAt: now + (opts?.ttlMs ?? SESSION_TTL_MS),
     ...(opts?.claims && { claims: opts.claims }),
   };
-  await store.set(sessionNode);
+  await tree.set(sessionNode);
   return token;
 }
 
-export async function resolveToken(store: Tree, token: string): Promise<Session | null> {
-  const node = await store.get(`/auth/sessions/${token}`) as SessionNode | undefined;
+export async function resolveToken(tree: Tree, token: string): Promise<Session | null> {
+  const node = await tree.get(`/auth/sessions/${token}`) as SessionNode | undefined;
   if (!node) return null;
   if (!node.userId || !node.expiresAt) {
     console.error(`[auth] corrupt session: ${token} (missing userId or expiresAt)`);
-    await store.remove(`/auth/sessions/${token}`);
+    await tree.remove(`/auth/sessions/${token}`);
     return null;
   }
   if (Date.now() > node.expiresAt) {
-    await store.remove(`/auth/sessions/${token}`);
+    await tree.remove(`/auth/sessions/${token}`);
     return null;
   }
   return { userId: node.userId, ...(node.claims && { claims: node.claims }) };
 }
 
-export async function revokeSession(store: Tree, token: string): Promise<boolean> {
-  return store.remove(`/auth/sessions/${token}`);
+export async function revokeSession(tree: Tree, token: string): Promise<boolean> {
+  return tree.remove(`/auth/sessions/${token}`);
 }
 
 // ── Password hashing ──
@@ -135,7 +135,7 @@ function cloneAclState(s: AclState): AclState {
 // stateCache: accumulated ACL state at each tree level — on sibling paths, start
 //   from the deepest cached ancestor instead of walking from root again.
 export async function resolvePermission(
-  store: Tree,
+  tree: Tree,
   path: string,
   userId: string | null,
   claims: string[],
@@ -169,7 +169,7 @@ export async function resolvePermission(
     if (nodeCache?.has(p)) {
       node = nodeCache.get(p);
     } else {
-      const fetched = await store.get(p);
+      const fetched = await tree.get(p);
       node = fetched ?? null;
       nodeCache?.set(p, node);
     }
@@ -269,10 +269,10 @@ export function stripComponents(node: NodeData, userId: string | null, claims: s
 
 // ── Build claims ──
 
-export async function buildClaims(store: Tree, userId: string): Promise<string[]> {
+export async function buildClaims(tree: Tree, userId: string): Promise<string[]> {
   const group = userId.startsWith('anon:') ? 'public' : 'authenticated';
   const claims = [`u:${userId}`, group];
-  const userNode = await store.get(`/auth/users/${userId}`);
+  const userNode = await tree.get(`/auth/users/${userId}`);
   if (userNode) {
     const gv = userNode['groups'];
     const groups = isComponent(gv) ? gv : undefined;
@@ -291,7 +291,7 @@ export type AclStore = Tree & {
 export function withAcl(rawStore: Tree, userId: string | null, claims: string[]): AclStore {
   const cache = new Map<string, number>();
   // stateCache: accumulated ACL state per tree level — avoids re-walking shared ancestors
-  // within a single request. nodeCache is handled by withCache in the store pipeline.
+  // within a single request. nodeCache is handled by withCache in the tree pipeline.
   const stateCache = new Map<string, AclState>();
 
   async function getPerm(path: string): Promise<number> {

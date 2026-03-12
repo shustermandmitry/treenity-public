@@ -1,10 +1,10 @@
 // Coverage gap tests — exercises uncovered code paths across the codebase.
 // Excludes Mongo (requires connection). Focuses on:
 //  - mount-adapters (memory, query, overlay, types, fs validation)
-//  - sift queries via memory store getChildren
+//  - sift queries via memory tree getChildren
 //  - sub.ts remove CDC path
 //  - actions.ts (executeAction, setComponent, applyTemplate)
-//  - fs store OCC
+//  - fs tree OCC
 //  - validate.ts edge cases
 //  - volatile extractPaths
 
@@ -35,8 +35,8 @@ function fullPipeline(rootStore?: Tree) {
   const volatile = withVolatile(mountable);
   const validated = withValidation(volatile);
   const events: any[] = [];
-  const store = withSubscriptions(validated, (e) => events.push(e));
-  return { bootstrap, store, events };
+  const tree = withSubscriptions(validated, (e) => events.push(e));
+  return { bootstrap, tree, events };
 }
 
 // ── mount-adapters (non-Mongo) ──
@@ -73,7 +73,7 @@ describe('Mount adapters', () => {
     });
   });
 
-  it('t.mount.memory creates independent store', async () => {
+  it('t.mount.memory creates independent tree', async () => {
     const root = createMemoryTree();
     await root.set(createNode('/mnt', 'folder', {}, {
       mount: { $type: 't.mount.memory' },
@@ -82,7 +82,7 @@ describe('Mount adapters', () => {
 
     await ms.set(createNode('/mnt/a', 'item'));
     assert.ok(await ms.get('/mnt/a'));
-    // Not visible in root store (mounted into separate memory)
+    // Not visible in root tree (mounted into separate memory)
     assert.equal(await root.get('/mnt/a'), undefined);
   });
 
@@ -144,16 +144,16 @@ describe('Mount adapters', () => {
   });
 });
 
-// ── Sift queries via memory store ──
+// ── Sift queries via memory tree ──
 
-describe('Sift queries via memory store', () => {
-  let store: Tree;
+describe('Sift queries via memory tree', () => {
+  let tree: Tree;
 
   beforeEach(async () => {
-    store = createMemoryTree();
+    tree = createMemoryTree();
     // Seed diverse data
     for (let i = 0; i < 20; i++) {
-      await store.set({
+      await tree.set({
         $path: `/items/${i}`,
         $type: i % 3 === 0 ? 'order' : 'task',
         status: { $type: 'status', value: i % 2 === 0 ? 'active' : 'done' },
@@ -164,24 +164,24 @@ describe('Sift queries via memory store', () => {
   });
 
   it('$eq (implicit)', async () => {
-    const result = await store.getChildren('/items', { query: { priority: 0 } });
+    const result = await tree.getChildren('/items', { query: { priority: 0 } });
     assert.ok(result.items.length > 0);
     for (const n of result.items) assert.equal((n as any).priority, 0);
   });
 
   it('$gt / $lt', async () => {
-    const result = await store.getChildren('/items', { query: { priority: { $gt: 3 } } });
+    const result = await tree.getChildren('/items', { query: { priority: { $gt: 3 } } });
     assert.ok(result.items.length > 0);
     for (const n of result.items) assert.ok((n as any).priority > 3);
   });
 
   it('$in', async () => {
-    const result = await store.getChildren('/items', { query: { priority: { $in: [0, 4] } } });
+    const result = await tree.getChildren('/items', { query: { priority: { $in: [0, 4] } } });
     for (const n of result.items) assert.ok([0, 4].includes((n as any).priority));
   });
 
   it('$and (composite)', async () => {
-    const result = await store.getChildren('/items', {
+    const result = await tree.getChildren('/items', {
       query: { $and: [{ priority: { $gte: 2 } }, { 'status.value': 'active' }] },
     });
     for (const n of result.items) {
@@ -191,49 +191,49 @@ describe('Sift queries via memory store', () => {
   });
 
   it('$or', async () => {
-    const result = await store.getChildren('/items', {
+    const result = await tree.getChildren('/items', {
       query: { $or: [{ priority: 0 }, { priority: 4 }] },
     });
     for (const n of result.items) assert.ok([0, 4].includes((n as any).priority));
   });
 
   it('$not / $ne', async () => {
-    const result = await store.getChildren('/items', { query: { priority: { $ne: 0 } } });
+    const result = await tree.getChildren('/items', { query: { priority: { $ne: 0 } } });
     for (const n of result.items) assert.notEqual((n as any).priority, 0);
   });
 
   it('$type mapping — _type instead of $type', async () => {
-    const result = await store.getChildren('/items', { query: { _type: 'order' } });
+    const result = await tree.getChildren('/items', { query: { _type: 'order' } });
     assert.ok(result.items.length > 0);
     for (const n of result.items) assert.equal(n.$type, 'order');
   });
 
   it('dot-path nested queries', async () => {
-    const result = await store.getChildren('/items', { query: { 'status.value': 'done' } });
+    const result = await tree.getChildren('/items', { query: { 'status.value': 'done' } });
     assert.ok(result.items.length > 0);
     for (const n of result.items) assert.equal((n as any).status.value, 'done');
   });
 
   it('$elemMatch on arrays', async () => {
-    const result = await store.getChildren('/items', { query: { tags: { $in: ['urgent'] } } });
+    const result = await tree.getChildren('/items', { query: { tags: { $in: ['urgent'] } } });
     assert.equal(result.items.length, 10);
     for (const n of result.items) assert.ok((n as any).tags.includes('urgent'));
   });
 
   it('$exists', async () => {
-    await store.set({ $path: '/items/special', $type: 'special', rare: true } as any);
-    const result = await store.getChildren('/items', { query: { rare: { $exists: true } } });
+    await tree.set({ $path: '/items/special', $type: 'special', rare: true } as any);
+    const result = await tree.getChildren('/items', { query: { rare: { $exists: true } } });
     assert.equal(result.items.length, 1);
     assert.equal(result.items[0].$path, '/items/special');
   });
 
   it('empty query returns all', async () => {
-    const result = await store.getChildren('/items', { query: {} });
+    const result = await tree.getChildren('/items', { query: {} });
     assert.equal(result.items.length, 20);
   });
 
   it('query + pagination', async () => {
-    const page = await store.getChildren('/items', {
+    const page = await tree.getChildren('/items', {
       query: { 'status.value': 'active' },
       limit: 3,
       offset: 0,
@@ -243,7 +243,7 @@ describe('Sift queries via memory store', () => {
   });
 
   it('query on non-existent path returns empty', async () => {
-    const result = await store.getChildren('/nonexistent', { query: { x: 1 } });
+    const result = await tree.getChildren('/nonexistent', { query: { x: 1 } });
     assert.equal(result.items.length, 0);
   });
 });
@@ -292,18 +292,18 @@ describe('sub.ts: remove + CDC', () => {
   it('remove emits rmVps when node was in query', async () => {
     const mem = createMemoryTree();
     const events: any[] = [];
-    const store = withSubscriptions(mem, (e) => events.push(e));
+    const tree = withSubscriptions(mem, (e) => events.push(e));
 
     // Register a query watch
     watchQuery('/active', '/items', { 'status.value': 'active' }, 'user1');
 
     // Create a matching node
-    await store.set({ $path: '/items/a', $type: 'item', status: { $type: 'status', value: 'active' } } as NodeData);
+    await tree.set({ $path: '/items/a', $type: 'item', status: { $type: 'status', value: 'active' } } as NodeData);
 
     events.length = 0;
 
     // Remove it — should emit rmVps
-    await store.remove('/items/a');
+    await tree.remove('/items/a');
     assert.equal(events.length, 1);
     assert.equal(events[0].type, 'remove');
     assert.deepEqual(events[0].rmVps, ['/active']);
@@ -314,14 +314,14 @@ describe('sub.ts: remove + CDC', () => {
   it('remove of non-matching node has empty rmVps', async () => {
     const mem = createMemoryTree();
     const events: any[] = [];
-    const store = withSubscriptions(mem, (e) => events.push(e));
+    const tree = withSubscriptions(mem, (e) => events.push(e));
 
     watchQuery('/active', '/items', { 'status.value': 'active' }, 'user1');
 
-    await store.set({ $path: '/items/b', $type: 'item', status: { $type: 'status', value: 'done' } } as NodeData);
+    await tree.set({ $path: '/items/b', $type: 'item', status: { $type: 'status', value: 'done' } } as NodeData);
     events.length = 0;
 
-    await store.remove('/items/b');
+    await tree.remove('/items/b');
     assert.equal(events.length, 1);
     assert.equal(events[0].type, 'remove');
     assert.equal(events[0].rmVps, undefined);
@@ -332,9 +332,9 @@ describe('sub.ts: remove + CDC', () => {
   it('remove of non-existent node emits nothing', async () => {
     const mem = createMemoryTree();
     const events: any[] = [];
-    const store = withSubscriptions(mem, (e) => events.push(e));
+    const tree = withSubscriptions(mem, (e) => events.push(e));
 
-    await store.remove('/ghost');
+    await tree.remove('/ghost');
     assert.equal(events.length, 0);
   });
 
@@ -383,14 +383,14 @@ describe('actions.ts operations', () => {
     }
     registerType('counter', Counter);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/c', 'item', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/c', 'item', {}, {
       counter: { $type: 'counter', count: 0 },
     }));
 
-    await executeAction(store, '/c', 'counter', undefined, 'increment');
+    await executeAction(tree, '/c', 'counter', undefined, 'increment');
 
-    const node = await store.get('/c');
+    const node = await tree.get('/c');
     assert.equal((node!['counter'] as any).count, 1);
     // $rev incremented
     assert.equal(node!.$rev, 2); // once from initial set, once from executeAction
@@ -402,26 +402,26 @@ describe('actions.ts operations', () => {
       return 'ok';
     });
 
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype'));
 
-    const result = await executeAction(store, '/n', undefined, undefined, 'doStuff');
+    const result = await executeAction(tree, '/n', undefined, undefined, 'doStuff');
     assert.equal(result, 'ok');
   });
 
   it('executeAction throws NOT_FOUND for missing node', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     await assert.rejects(
-      () => executeAction(store, '/missing', undefined, undefined, 'x'),
+      () => executeAction(tree, '/missing', undefined, undefined, 'x'),
       (e: any) => { assert.equal(e.code, 'NOT_FOUND'); return true; },
     );
   });
 
   it('executeAction throws NOT_FOUND for missing component', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'item'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'item'));
     await assert.rejects(
-      () => executeAction(store, '/n', 'ghost', undefined, 'x'),
+      () => executeAction(tree, '/n', 'ghost', undefined, 'x'),
       (e: any) => { assert.equal(e.code, 'NOT_FOUND'); return true; },
     );
   });
@@ -430,13 +430,13 @@ describe('actions.ts operations', () => {
     class Dummy { x = 1; }
     registerType('dummy', Dummy);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'item', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'item', {}, {
       dummy: { $type: 'dummy', x: 1 },
     }));
 
     await assert.rejects(
-      () => executeAction(store, '/n', 'dummy', undefined, 'nonexistent'),
+      () => executeAction(tree, '/n', 'dummy', undefined, 'nonexistent'),
       (e: any) => { assert.equal(e.code, 'BAD_REQUEST'); return true; },
     );
   });
@@ -446,20 +446,20 @@ describe('actions.ts operations', () => {
       return { echo: data };
     });
 
-    const store = createMemoryTree();
-    await store.set(createNode('/r', 'reader'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/r', 'reader'));
 
-    const result = await executeAction(store, '/r', undefined, undefined, 'read', { msg: 'hello' });
+    const result = await executeAction(tree, '/r', undefined, undefined, 'read', { msg: 'hello' });
     assert.deepEqual(result, { echo: { msg: 'hello' } });
-    // $rev stays at 1 — no store.set() called
-    const node = await store.get('/r');
+    // $rev stays at 1 — no tree.set() called
+    const node = await tree.get('/r');
     assert.equal(node!.$rev, 1);
   });
 
   it('executeAction throws NOT_FOUND for missing node (no type)', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     await assert.rejects(
-      () => executeAction(store, '/missing', undefined, undefined, 'x'),
+      () => executeAction(tree, '/missing', undefined, undefined, 'x'),
       (e: any) => { assert.equal(e.code, 'NOT_FOUND'); return true; },
     );
   });
@@ -472,13 +472,13 @@ describe('actions.ts operations', () => {
     }
     registerType('emitter', Emitter);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/e', 'item', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/e', 'item', {}, {
       emitter: { $type: 'emitter' },
     }));
 
     const collected: unknown[] = [];
-    for await (const item of executeStream(store, '/e', 'emitter', undefined, 'emit', { n: 3 })) {
+    for await (const item of executeStream(tree, '/e', 'emitter', undefined, 'emit', { n: 3 })) {
       collected.push(item);
     }
     assert.deepEqual(collected, [0, 1, 2]);
@@ -488,79 +488,79 @@ describe('actions.ts operations', () => {
     class Plain { run() { return 42; } }
     registerType('plain', Plain);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/p', 'item', {}, { plain: { $type: 'plain' } }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/p', 'item', {}, { plain: { $type: 'plain' } }));
 
     await assert.rejects(
       async () => {
-        for await (const _ of executeStream(store, '/p', 'plain', undefined, 'run')) { /* */ }
+        for await (const _ of executeStream(tree, '/p', 'plain', undefined, 'run')) { /* */ }
       },
       (e: any) => { assert.equal(e.code, 'BAD_REQUEST'); return true; },
     );
   });
 
   it('setComponent updates single component', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/s', 'item', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/s', 'item', {}, {
       meta: { $type: 'meta', title: 'old' },
     }));
 
-    await setComponent(store, '/s', 'meta', { $type: 'meta', title: 'new' });
+    await setComponent(tree, '/s', 'meta', { $type: 'meta', title: 'new' });
 
-    const node = await store.get('/s');
+    const node = await tree.get('/s');
     assert.equal((node as any).meta.title, 'new');
   });
 
   it('setComponent throws NOT_FOUND for missing node', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     await assert.rejects(
-      () => setComponent(store, '/missing', 'x', {}),
+      () => setComponent(tree, '/missing', 'x', {}),
       (e: any) => { assert.equal(e.code, 'NOT_FOUND'); return true; },
     );
   });
 
   it('setComponent throws CONFLICT on stale rev', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/s', 'item'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/s', 'item'));
     await assert.rejects(
-      () => setComponent(store, '/s', 'x', {}, 999),
+      () => setComponent(tree, '/s', 'x', {}, 999),
       (e: any) => { assert.equal(e.code, 'CONFLICT'); return true; },
     );
   });
 
   it('applyTemplate copies children to target', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/templates/blog', 'template'));
-    await store.set(createNode('/templates/blog/header', 'block', { text: 'Hello' }));
-    await store.set(createNode('/templates/blog/body', 'block', { text: 'Content' }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/templates/blog', 'template'));
+    await tree.set(createNode('/templates/blog/header', 'block', { text: 'Hello' }));
+    await tree.set(createNode('/templates/blog/body', 'block', { text: 'Content' }));
 
     // Existing children at target get removed
-    await store.set(createNode('/pages/p1', 'page'));
-    await store.set(createNode('/pages/p1/old', 'block'));
+    await tree.set(createNode('/pages/p1', 'page'));
+    await tree.set(createNode('/pages/p1/old', 'block'));
 
-    const result = await applyTemplate(store, '/templates/blog', '/pages/p1');
+    const result = await applyTemplate(tree, '/templates/blog', '/pages/p1');
     assert.equal(result.blocks, 2);
     assert.equal(result.applied, '/templates/blog');
 
     // Old child gone
-    assert.equal(await store.get('/pages/p1/old'), undefined);
+    assert.equal(await tree.get('/pages/p1/old'), undefined);
 
     // New children present
-    const header = await store.get('/pages/p1/header');
+    const header = await tree.get('/pages/p1/header');
     assert.ok(header);
     assert.equal((header as any).text, 'Hello');
   });
 
   it('applyTemplate throws NOT_FOUND for missing template', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     await assert.rejects(
-      () => applyTemplate(store, '/missing', '/target'),
+      () => applyTemplate(tree, '/missing', '/target'),
       (e: any) => { assert.equal(e.code, 'NOT_FOUND'); return true; },
     );
   });
 });
 
-// ── fs store: OCC + remove edge cases ──
+// ── fs tree: OCC + remove edge cases ──
 
 describe('FsStore OCC', () => {
   let dir: string;
@@ -571,24 +571,24 @@ describe('FsStore OCC', () => {
 
   it('OCC rejects stale rev', async () => {
     dir = await mkdtemp(join(tmpdir(), 'treenity-fs-occ-'));
-    const store = await createFsTree(dir);
+    const tree = await createFsTree(dir);
 
-    await store.set(createNode('/n', 'item')); // rev becomes 1
-    const node = await store.get('/n');
+    await tree.set(createNode('/n', 'item')); // rev becomes 1
+    const node = await tree.get('/n');
 
     // Simulate stale read
-    await store.set({ ...node!, $rev: node!.$rev }); // rev becomes 2
+    await tree.set({ ...node!, $rev: node!.$rev }); // rev becomes 2
 
     // Now try with stale rev=1
-    await assert.rejects(() => store.set({ ...node!, $rev: 1 }));
+    await assert.rejects(() => tree.set({ ...node!, $rev: 1 }));
   });
 
   it('OCC throws when node does not exist but rev provided', async () => {
     dir = await mkdtemp(join(tmpdir(), 'treenity-fs-occ2-'));
-    const store = await createFsTree(dir);
+    const tree = await createFsTree(dir);
 
     await assert.rejects(
-      () => store.set({ ...createNode('/ghost', 'item'), $rev: 1 }),
+      () => tree.set({ ...createNode('/ghost', 'item'), $rev: 1 }),
     );
   });
 });
@@ -606,10 +606,10 @@ describe('Validation edge cases', () => {
       properties: { name: { type: 'string' } },
     }));
 
-    const store = withValidation(createMemoryTree());
+    const tree = withValidation(createMemoryTree());
 
     await assert.rejects(
-      () => store.set({ $path: '/v', $type: 'x', comp: { $type: 'typed', name: 123 } } as any),
+      () => tree.set({ $path: '/v', $type: 'x', comp: { $type: 'typed', name: 123 } } as any),
     );
   });
 
@@ -618,10 +618,10 @@ describe('Validation edge cases', () => {
       properties: { count: { type: 'number' } },
     }));
 
-    const store = withValidation(createMemoryTree());
+    const tree = withValidation(createMemoryTree());
 
     await assert.rejects(
-      () => store.set({ $path: '/v', $type: 'x', comp: { $type: 'numtype', count: 'not a number' } } as any),
+      () => tree.set({ $path: '/v', $type: 'x', comp: { $type: 'numtype', count: 'not a number' } } as any),
     );
   });
 
@@ -630,10 +630,10 @@ describe('Validation edge cases', () => {
       properties: { flag: { type: 'boolean' } },
     }));
 
-    const store = withValidation(createMemoryTree());
+    const tree = withValidation(createMemoryTree());
 
     await assert.rejects(
-      () => store.set({ $path: '/v', $type: 'x', comp: { $type: 'booltype', flag: 42 } } as any),
+      () => tree.set({ $path: '/v', $type: 'x', comp: { $type: 'booltype', flag: 42 } } as any),
     );
   });
 
@@ -642,16 +642,16 @@ describe('Validation edge cases', () => {
       properties: { name: { type: 'string' } },
     }));
 
-    const store = withValidation(createMemoryTree());
+    const tree = withValidation(createMemoryTree());
     // null and undefined should pass — optional by default
-    await store.set({ $path: '/v', $type: 'x', comp: { $type: 'opttype', name: null } } as any);
-    await store.set({ $path: '/v2', $type: 'x', comp: { $type: 'opttype' } } as any);
+    await tree.set({ $path: '/v', $type: 'x', comp: { $type: 'opttype', name: null } } as any);
+    await tree.set({ $path: '/v2', $type: 'x', comp: { $type: 'opttype' } } as any);
   });
 
   it('skips components without schema', async () => {
-    const store = withValidation(createMemoryTree());
-    await store.set({ $path: '/v', $type: 'x', comp: { $type: 'untyped', anything: 'goes' } } as any);
-    const node = await store.get('/v');
+    const tree = withValidation(createMemoryTree());
+    await tree.set({ $path: '/v', $type: 'x', comp: { $type: 'untyped', anything: 'goes' } } as any);
+    const node = await tree.get('/v');
     assert.ok(node, 'node should be stored');
     assert.equal((node as any).comp.anything, 'goes');
   });
@@ -659,9 +659,9 @@ describe('Validation edge cases', () => {
   it('skips schemas without properties', async () => {
     register('emptyschema', 'schema', () => ({}));
 
-    const store = withValidation(createMemoryTree());
-    await store.set({ $path: '/v', $type: 'x', comp: { $type: 'emptyschema', x: 1 } } as any);
-    const node = await store.get('/v');
+    const tree = withValidation(createMemoryTree());
+    await tree.set({ $path: '/v', $type: 'x', comp: { $type: 'emptyschema', x: 1 } } as any);
+    const node = await tree.get('/v');
     assert.ok(node, 'node should be stored');
     assert.equal((node as any).comp.x, 1);
   });
@@ -768,7 +768,7 @@ describe('TypesStore', () => {
     assert.equal(result, true);
   });
 
-  it('set goes to backing store', async () => {
+  it('set goes to backing tree', async () => {
     const backing = createMemoryTree();
     const ts = createTypesStore(backing);
     await ts.set(createNode('/sys/types/dynamic/type', 'type'));

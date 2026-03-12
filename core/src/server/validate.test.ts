@@ -6,11 +6,11 @@ import { beforeEach, describe, it } from 'node:test';
 import { withValidation } from './validate';
 
 describe('withValidation (Write-Barrier)', () => {
-  let store: ReturnType<typeof createMemoryTree>;
+  let tree: ReturnType<typeof createMemoryTree>;
 
   beforeEach(() => {
     clearRegistry();
-    store = createMemoryTree();
+    tree = createMemoryTree();
 
     register('metadata', 'schema', () => ({
       title: 'Metadata',
@@ -24,7 +24,7 @@ describe('withValidation (Write-Barrier)', () => {
   });
 
   it('allows valid components', async () => {
-    const vs = withValidation(store);
+    const vs = withValidation(tree);
     await vs.set({
       $path: '/a', $type: 'item',
       metadata: { $type: 'metadata', title: 'Hello', count: 5, active: true },
@@ -35,7 +35,7 @@ describe('withValidation (Write-Barrier)', () => {
   });
 
   it('rejects wrong type: string expected, got number', async () => {
-    const vs = withValidation(store);
+    const vs = withValidation(tree);
     await assert.rejects(
       () => vs.set({
         $path: '/a', $type: 'item',
@@ -45,7 +45,7 @@ describe('withValidation (Write-Barrier)', () => {
   });
 
   it('rejects wrong type: number expected, got string', async () => {
-    const vs = withValidation(store);
+    const vs = withValidation(tree);
     await assert.rejects(
       () => vs.set({
         $path: '/a', $type: 'item',
@@ -55,7 +55,7 @@ describe('withValidation (Write-Barrier)', () => {
   });
 
   it('allows missing optional fields', async () => {
-    const vs = withValidation(store);
+    const vs = withValidation(tree);
     // Only title set, count and active missing — fine
     await vs.set({
       $path: '/a', $type: 'item',
@@ -65,7 +65,7 @@ describe('withValidation (Write-Barrier)', () => {
   });
 
   it('passes through nodes without schemas', async () => {
-    const vs = withValidation(store);
+    const vs = withValidation(tree);
     await vs.set({
       $path: '/a', $type: 'item',
       custom: { $type: 'no-schema-type', anything: 'goes' },
@@ -74,15 +74,15 @@ describe('withValidation (Write-Barrier)', () => {
   });
 
   it('skips system fields', async () => {
-    const vs = withValidation(store);
+    const vs = withValidation(tree);
     // $path, $type, $rev etc should not trigger validation
     await vs.set(createNode('/a', 'item'));
     assert.ok(await vs.get('/a'));
   });
 
   it('get/getChildren/remove pass through', async () => {
-    const vs = withValidation(store);
-    await store.set(createNode('/a', 'item'));
+    const vs = withValidation(tree);
+    await tree.set(createNode('/a', 'item'));
     assert.ok(await vs.get('/a'));
     const children = await vs.getChildren('/');
     assert.equal(children.items.length, 1);

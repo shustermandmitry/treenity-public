@@ -19,7 +19,7 @@ describe('Agent task subscription', () => {
     register('agent.config', 'action:task', async (ctx: ActionCtx, data: { prompt: string }) => {
       const id = `t-${Date.now()}`;
       const taskPath = `${ctx.node.$path}/tasks/${id}`;
-      await ctx.store.set(createNode(taskPath, 'agent.task', {
+      await ctx.tree.set(createNode(taskPath, 'agent.task', {
         prompt: data.prompt,
         status: 'pending',
         createdAt: Date.now(),
@@ -27,14 +27,14 @@ describe('Agent task subscription', () => {
       return { taskPath };
     });
 
-    // Build store pipeline: memory → subscriptions → watcher
+    // Build tree pipeline: memory → subscriptions → watcher
     const mem = createMemoryTree();
     const watcher = createWatchManager();
-    const store = withSubscriptions(mem, (e) => watcher.notify(e));
+    const tree = withSubscriptions(mem, (e) => watcher.notify(e));
 
     // Seed the agent config node
-    await store.set(createNode('/agent', 'agent.config', { systemPrompt: 'test' }));
-    await store.set(createNode('/agent/tasks', 'dir'));
+    await tree.set(createNode('/agent', 'agent.config', { systemPrompt: 'test' }));
+    await tree.set(createNode('/agent/tasks', 'dir'));
 
     // Simulate user: connect SSE + register prefix watch
     const events: NodeEvent[] = [];
@@ -42,7 +42,7 @@ describe('Agent task subscription', () => {
     watcher.watch('user1', ['/agent/tasks'], { children: true, autoWatch: true });
 
     // Execute the action (same as trpc.execute.mutate)
-    const result = await executeAction(store, '/agent', undefined, undefined, 'task', { prompt: 'test task' });
+    const result = await executeAction(tree, '/agent', undefined, undefined, 'task', { prompt: 'test task' });
     assert.ok(result && typeof (result as any).taskPath === 'string');
 
     // Verify: the watcher should have received the new task event
@@ -55,7 +55,7 @@ describe('Agent task subscription', () => {
   it('new child event includes correct node data for cache.put', async () => {
     register('agent.config', 'action:task', async (ctx: ActionCtx, data: { prompt: string }) => {
       const taskPath = `${ctx.node.$path}/tasks/t-1`;
-      await ctx.store.set(createNode(taskPath, 'agent.task', {
+      await ctx.tree.set(createNode(taskPath, 'agent.task', {
         prompt: data.prompt,
         status: 'pending',
         createdAt: 12345,
@@ -65,16 +65,16 @@ describe('Agent task subscription', () => {
 
     const mem = createMemoryTree();
     const watcher = createWatchManager();
-    const store = withSubscriptions(mem, (e) => watcher.notify(e));
+    const tree = withSubscriptions(mem, (e) => watcher.notify(e));
 
-    await store.set(createNode('/agent', 'agent.config'));
-    await store.set(createNode('/agent/tasks', 'dir'));
+    await tree.set(createNode('/agent', 'agent.config'));
+    await tree.set(createNode('/agent/tasks', 'dir'));
 
     const events: NodeEvent[] = [];
     watcher.connect('c1', 'u1', (e) => events.push(e));
     watcher.watch('u1', ['/agent/tasks'], { children: true, autoWatch: true });
 
-    await executeAction(store, '/agent', undefined, undefined, 'task', { prompt: 'hello' });
+    await executeAction(tree, '/agent', undefined, undefined, 'task', { prompt: 'hello' });
 
     // Simulate what the client does: reconstruct the node from the event
     assert.equal(events.length, 1);

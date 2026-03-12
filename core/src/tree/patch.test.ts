@@ -2,7 +2,7 @@ import { createNode } from '#core';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createMemoryTree } from './index';
-import { applyOps, fromRfc6902, PatchTestError, toRfc6902, type PatchOp } from './patch';
+import { applyOps, fromRfc6902, type PatchOp, PatchTestError, toRfc6902 } from './patch';
 
 describe('applyOps', () => {
   it('replace shallow field', () => {
@@ -97,72 +97,72 @@ describe('RFC 6902 conversion', () => {
 
 describe('Tree.patch', () => {
   it('patches a node in memory tree', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', { title: 'old', count: 1 }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', { title: 'old', count: 1 }));
 
-    await store.patch('/n', [['r', 'title', 'new'], ['r', 'count', 2]]);
+    await tree.patch('/n', [['r', 'title', 'new'], ['r', 'count', 2]]);
 
-    const result = (await store.get('/n'))!;
+    const result = (await tree.get('/n'))!;
     assert.equal(result.title, 'new');
     assert.equal(result.count, 2);
   });
 
   it('bumps $rev on patch', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', { title: 'x' }));
-    const rev1 = (await store.get('/n'))!.$rev!;
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', { title: 'x' }));
+    const rev1 = (await tree.get('/n'))!.$rev!;
 
-    await store.patch('/n', [['r', 'title', 'y']]);
-    const rev2 = (await store.get('/n'))!.$rev!;
+    await tree.patch('/n', [['r', 'title', 'y']]);
+    const rev2 = (await tree.get('/n'))!.$rev!;
     assert.equal(rev2, rev1 + 1);
   });
 
   it('OCC via test op', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', { title: 'x' }));
-    const rev = (await store.get('/n'))!.$rev!;
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', { title: 'x' }));
+    const rev = (await tree.get('/n'))!.$rev!;
 
     // Correct rev — should succeed
-    await store.patch('/n', [['t', '$rev', rev], ['r', 'title', 'y']]);
-    assert.equal((await store.get('/n'))!.title, 'y');
+    await tree.patch('/n', [['t', '$rev', rev], ['r', 'title', 'y']]);
+    assert.equal((await tree.get('/n'))!.title, 'y');
 
     // Stale rev — should fail
     await assert.rejects(
-      () => store.patch('/n', [['t', '$rev', rev], ['r', 'title', 'z']]),
+      () => tree.patch('/n', [['t', '$rev', rev], ['r', 'title', 'z']]),
       (e: any) => e instanceof PatchTestError,
     );
     // Value unchanged after failed patch
-    assert.equal((await store.get('/n'))!.title, 'y');
+    assert.equal((await tree.get('/n'))!.title, 'y');
   });
 
   it('throws on missing node', async () => {
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     await assert.rejects(
-      () => store.patch('/nonexistent', [['r', 'x', 1]]),
+      () => tree.patch('/nonexistent', [['r', 'x', 1]]),
       /Node not found/,
     );
   });
 
   it('preserves $type and $path', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', { title: 'x' }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', { title: 'x' }));
 
-    await store.patch('/n', [['r', 'title', 'y']]);
+    await tree.patch('/n', [['r', 'title', 'y']]);
 
-    const result = (await store.get('/n'))!;
+    const result = (await tree.get('/n'))!;
     assert.equal(result.$type, 't.mytype');
     assert.equal(result.$path, '/n');
   });
 
   it('nested field patch', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', {
       mesh: { $type: 't3d.mesh', width: 5, height: 10 },
     }));
 
-    await store.patch('/n', [['r', 'mesh.width', 20]]);
+    await tree.patch('/n', [['r', 'mesh.width', 20]]);
 
-    const result = (await store.get('/n'))!;
+    const result = (await tree.get('/n'))!;
     const mesh = result.mesh as any;
     assert.equal(mesh.width, 20);
     assert.equal(mesh.height, 10);
@@ -170,22 +170,22 @@ describe('Tree.patch', () => {
   });
 
   it('add to array', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', { tags: ['a', 'b'] }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', { tags: ['a', 'b'] }));
 
-    await store.patch('/n', [['a', 'tags.-', 'c']]);
+    await tree.patch('/n', [['a', 'tags.-', 'c']]);
 
-    const result = (await store.get('/n'))!;
+    const result = (await tree.get('/n'))!;
     assert.deepEqual(result.tags, ['a', 'b', 'c']);
   });
 
   it('delete field', async () => {
-    const store = createMemoryTree();
-    await store.set(createNode('/n', 'mytype', { title: 'x', obsolete: true }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/n', 'mytype', { title: 'x', obsolete: true }));
 
-    await store.patch('/n', [['d', 'obsolete']]);
+    await tree.patch('/n', [['d', 'obsolete']]);
 
-    const result = (await store.get('/n'))!;
+    const result = (await tree.get('/n'))!;
     assert.equal(result.title, 'x');
     assert.equal('obsolete' in result, false);
   });

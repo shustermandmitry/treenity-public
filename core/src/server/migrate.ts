@@ -39,24 +39,24 @@ function stampVersion(node: NodeData): void {
   node['$v'] = m.version;
 }
 
-export function withMigration(store: Tree): Tree {
+export function withMigration(tree: Tree): Tree {
   return {
-    ...store,
+    ...tree,
 
     async get(path, ctx) {
-      const node = await store.get(path, ctx);
+      const node = await tree.get(path, ctx);
       if (!node) return node;
       return migrateNode(node);
     },
 
     async getChildren(path, opts, ctx) {
-      const page = await store.getChildren(path, opts, ctx);
+      const page = await tree.getChildren(path, opts, ctx);
       return { ...page, items: page.items.map(migrateNode) };
     },
 
     async set(node, ctx) {
       stampVersion(node);
-      return store.set(node, ctx);
+      return tree.set(node, ctx);
     },
   };
 }

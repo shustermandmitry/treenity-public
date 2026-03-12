@@ -26,7 +26,7 @@ function resolvePath(nodePath: string, target: string): string {
 
 /** Core deploy loop — shared by deployPrefab and deployByKey */
 async function deployNodes(
-  store: Tree,
+  tree: Tree,
   prefab: PrefabEntry,
   target: string,
   opts?: DeployOpts,
@@ -49,13 +49,13 @@ async function deployNodes(
     const resolvedPath = resolvePath(node.$path, target);
 
     // Idempotent: skip if exists
-    if (await store.get(resolvedPath)) {
+    if (await tree.get(resolvedPath)) {
       skipped++;
       continue;
     }
 
     const { $rev, $path, ...rest } = node;
-    await store.set({ ...rest, $path: resolvedPath } as NodeData);
+    await tree.set({ ...rest, $path: resolvedPath } as NodeData);
     deployed++;
   }
 
@@ -64,7 +64,7 @@ async function deployNodes(
 
 /** Deploy prefab by source path (/sys/mods/{mod}/prefabs/{name}) */
 export async function deployPrefab(
-  store: Tree,
+  tree: Tree,
   source: string,
   target: string,
   opts?: DeployOpts,
@@ -75,12 +75,12 @@ export async function deployPrefab(
   const prefab = getPrefab(parsed[0], parsed[1]);
   if (!prefab) throw new OpError('NOT_FOUND', `Prefab not found: ${source}`);
 
-  return deployNodes(store, prefab, target, opts);
+  return deployNodes(tree, prefab, target, opts);
 }
 
 /** Deploy prefab by mod+name directly (no path parsing) */
 export async function deployByKey(
-  store: Tree,
+  tree: Tree,
   mod: string,
   name: string,
   target: string,
@@ -89,17 +89,17 @@ export async function deployByKey(
   const prefab = getPrefab(mod, name);
   if (!prefab) throw new OpError('NOT_FOUND', `Prefab not found: ${mod}/${name}`);
 
-  return deployNodes(store, prefab, target, opts);
+  return deployNodes(tree, prefab, target, opts);
 }
 
 /** Deploy seed prefabs. If filter provided, only deploy seeds whose mod is in the list. */
-export async function deploySeedPrefabs(store: Tree, filter?: string[]): Promise<void> {
+export async function deploySeedPrefabs(tree: Tree, filter?: string[]): Promise<void> {
   const isTenant = !!process.env.TENANT;
   const seeds = getSeedPrefabs();
 
   for (const [mod, prefab] of seeds) {
     if (filter && !filter.includes(mod)) continue;
     if (isTenant && prefab.meta?.tier !== 'core') continue;
-    await deployNodes(store, prefab, '/', { allowAbsolute: true, params: { store } });
+    await deployNodes(tree, prefab, '/', { allowAbsolute: true, params: { tree } });
   }
 }

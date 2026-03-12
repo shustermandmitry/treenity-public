@@ -16,9 +16,9 @@ class TodoList {
   /** @description Add a new todo item */
   async add(data: { title: string }) {
     if (!data.title?.trim()) throw new Error('Title required');
-    const { node, store } = getCtx();
+    const { node, tree } = getCtx();
     const id = Date.now().toString(36);
-    await store.set({
+    await tree.set({
       $path: `${node.$path}/${id}`,
       $type: 'todo.item',
       title: data.title.trim(),

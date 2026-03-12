@@ -142,11 +142,11 @@ describe('Mods mount', () => {
 });
 
 describe('deployPrefab', () => {
-  let store: Tree;
+  let tree: Tree;
 
   beforeEach(() => {
     clearPrefabs();
-    store = createMemoryTree();
+    tree = createMemoryTree();
   });
   afterEach(() => clearPrefabs());
 
@@ -156,14 +156,14 @@ describe('deployPrefab', () => {
       { $path: 'child', $type: 'item', label: 'Hello' } as NodeData,
     ]);
 
-    const result = await deployPrefab(store, '/sys/mods/test/prefabs/basic', '/app', {});
+    const result = await deployPrefab(tree, '/sys/mods/test/prefabs/basic', '/app', {});
     assert.equal(result.deployed, 2);
     assert.equal(result.skipped, 0);
 
-    const root = await store.get('/app');
+    const root = await tree.get('/app');
     assert.equal(root?.$type, 'dir');
 
-    const child = await store.get('/app/child');
+    const child = await tree.get('/app/child');
     assert.equal(child?.$type, 'item');
     assert.equal((child as any).label, 'Hello');
   });
@@ -174,8 +174,8 @@ describe('deployPrefab', () => {
       { $path: 'b', $type: 'dir' } as NodeData,
     ]);
 
-    await deployPrefab(store, '/sys/mods/test/prefabs/idem', '/x', {});
-    const result = await deployPrefab(store, '/sys/mods/test/prefabs/idem', '/x', {});
+    await deployPrefab(tree, '/sys/mods/test/prefabs/idem', '/x', {});
+    const result = await deployPrefab(tree, '/sys/mods/test/prefabs/idem', '/x', {});
     assert.equal(result.deployed, 0);
     assert.equal(result.skipped, 2);
   });
@@ -186,7 +186,7 @@ describe('deployPrefab', () => {
     ]);
 
     await assert.rejects(
-      () => deployPrefab(store, '/sys/mods/test/prefabs/abs', '/app', {}),
+      () => deployPrefab(tree, '/sys/mods/test/prefabs/abs', '/app', {}),
       (e: Error) => e.message.includes('not allowed'),
     );
   });
@@ -197,15 +197,15 @@ describe('deployPrefab', () => {
       { $path: '/sys/autostart/svc', $type: 'ref', $ref: '/app/svc' } as NodeData,
     ]);
 
-    const result = await deployPrefab(store, '/sys/mods/test/prefabs/abs2', '/app', {
+    const result = await deployPrefab(tree, '/sys/mods/test/prefabs/abs2', '/app', {
       allowAbsolute: true,
     });
     assert.equal(result.deployed, 2);
 
-    const ref = await store.get('/sys/autostart/svc');
+    const ref = await tree.get('/sys/autostart/svc');
     assert.equal(ref?.$type, 'ref');
 
-    const local = await store.get('/app/local');
+    const local = await tree.get('/app/local');
     assert.equal(local?.$type, 'dir');
   });
 
@@ -219,24 +219,24 @@ describe('deployPrefab', () => {
       );
     });
 
-    await deployPrefab(store, '/sys/mods/test/prefabs/setup', '/app', {
+    await deployPrefab(tree, '/sys/mods/test/prefabs/setup', '/app', {
       params: { value: 'custom' },
     });
 
-    const cfg = await store.get('/app/cfg');
+    const cfg = await tree.get('/app/cfg');
     assert.equal((cfg as any).value, 'custom');
   });
 
   it('throws on invalid source path', async () => {
     await assert.rejects(
-      () => deployPrefab(store, '/bad/path', '/app'),
+      () => deployPrefab(tree, '/bad/path', '/app'),
       (e: Error) => e.message.includes('Invalid prefab path'),
     );
   });
 
   it('throws on missing prefab', async () => {
     await assert.rejects(
-      () => deployPrefab(store, '/sys/mods/nope/prefabs/nope', '/app'),
+      () => deployPrefab(tree, '/sys/mods/nope/prefabs/nope', '/app'),
       (e: Error) => e.message.includes('not found'),
     );
   });
@@ -246,9 +246,9 @@ describe('deployPrefab', () => {
       { $path: 'x', $type: 'dir', $rev: 42 } as NodeData,
     ]);
 
-    await deployPrefab(store, '/sys/mods/test/prefabs/rev', '/app', {});
-    const node = await store.get('/app/x');
-    // $rev should be set by store (1), not prefab's 42
+    await deployPrefab(tree, '/sys/mods/test/prefabs/rev', '/app', {});
+    const node = await tree.get('/app/x');
+    // $rev should be set by tree (1), not prefab's 42
     assert.notEqual(node?.$rev, 42);
   });
 
@@ -260,18 +260,18 @@ describe('deployPrefab', () => {
       return nodes.map(n => ({ ...n, value: 'async-result' }));
     });
 
-    await deployPrefab(store, '/sys/mods/test/prefabs/async-setup', '/app', {});
-    const cfg = await store.get('/app/cfg');
+    await deployPrefab(tree, '/sys/mods/test/prefabs/async-setup', '/app', {});
+    const cfg = await tree.get('/app/cfg');
     assert.equal((cfg as any).value, 'async-result');
   });
 });
 
 describe('deployByKey', () => {
-  let store: Tree;
+  let tree: Tree;
 
   beforeEach(() => {
     clearPrefabs();
-    store = createMemoryTree();
+    tree = createMemoryTree();
   });
   afterEach(() => clearPrefabs());
 
@@ -281,16 +281,16 @@ describe('deployByKey', () => {
       { $path: 'child', $type: 'item' } as NodeData,
     ]);
 
-    const result = await deployByKey(store, 'mymod', 'stuff', '/target');
+    const result = await deployByKey(tree, 'mymod', 'stuff', '/target');
     assert.equal(result.deployed, 2);
 
-    assert.equal((await store.get('/target'))?.$type, 'dir');
-    assert.equal((await store.get('/target/child'))?.$type, 'item');
+    assert.equal((await tree.get('/target'))?.$type, 'dir');
+    assert.equal((await tree.get('/target/child'))?.$type, 'item');
   });
 
   it('throws on missing prefab', async () => {
     await assert.rejects(
-      () => deployByKey(store, 'nope', 'nope', '/x'),
+      () => deployByKey(tree, 'nope', 'nope', '/x'),
       (e: Error) => e.message.includes('not found'),
     );
   });
@@ -317,11 +317,11 @@ describe('getSeedPrefabs', () => {
 });
 
 describe('deploySeedPrefabs', () => {
-  let store: Tree;
+  let tree: Tree;
 
   beforeEach(() => {
     clearPrefabs();
-    store = createMemoryTree();
+    tree = createMemoryTree();
   });
   afterEach(() => {
     clearPrefabs();
@@ -337,11 +337,11 @@ describe('deploySeedPrefabs', () => {
       { $path: 'beta', $type: 'dir' } as NodeData,
     ]);
 
-    await deploySeedPrefabs(store);
+    await deploySeedPrefabs(tree);
 
-    assert.equal((await store.get('/alpha'))?.$type, 'dir');
-    assert.equal((await store.get('/alpha/child'))?.$type, 'item');
-    assert.equal((await store.get('/beta'))?.$type, 'dir');
+    assert.equal((await tree.get('/alpha'))?.$type, 'dir');
+    assert.equal((await tree.get('/alpha/child'))?.$type, 'item');
+    assert.equal((await tree.get('/beta'))?.$type, 'dir');
   });
 
   it('allows absolute paths in seed prefabs', async () => {
@@ -350,10 +350,10 @@ describe('deploySeedPrefabs', () => {
       { $path: '/sys/autostart/svc', $type: 'ref', $ref: '/svc' } as NodeData,
     ]);
 
-    await deploySeedPrefabs(store);
+    await deploySeedPrefabs(tree);
 
-    assert.equal((await store.get('/svc'))?.$type, 'service');
-    assert.equal((await store.get('/sys/autostart/svc'))?.$type, 'ref');
+    assert.equal((await tree.get('/svc'))?.$type, 'service');
+    assert.equal((await tree.get('/sys/autostart/svc'))?.$type, 'ref');
   });
 
   it('TENANT mode skips non-core seeds', async () => {
@@ -367,10 +367,10 @@ describe('deploySeedPrefabs', () => {
       { $path: 'heavy', $type: 'dir' } as NodeData,
     ]);
 
-    await deploySeedPrefabs(store);
+    await deploySeedPrefabs(tree);
 
-    assert.equal((await store.get('/sys'))?.$type, 'dir');
-    assert.equal(await store.get('/heavy'), undefined);
+    assert.equal((await tree.get('/sys'))?.$type, 'dir');
+    assert.equal(await tree.get('/heavy'), undefined);
   });
 
   it('non-TENANT mode deploys all seeds', async () => {
@@ -382,25 +382,25 @@ describe('deploySeedPrefabs', () => {
       { $path: 'heavy', $type: 'dir' } as NodeData,
     ]);
 
-    await deploySeedPrefabs(store);
+    await deploySeedPrefabs(tree);
 
-    assert.equal((await store.get('/sys'))?.$type, 'dir');
-    assert.equal((await store.get('/heavy'))?.$type, 'dir');
+    assert.equal((await tree.get('/sys'))?.$type, 'dir');
+    assert.equal((await tree.get('/heavy'))?.$type, 'dir');
   });
 
-  it('seed prefab setup receives store in params', async () => {
+  it('seed prefab setup receives tree in params', async () => {
     let receivedStore: unknown = null;
 
     registerPrefab('test', 'seed', [
       { $path: 'test', $type: 'dir' } as NodeData,
     ], (nodes, params) => {
-      receivedStore = (params as any)?.store;
+      receivedStore = (params as any)?.tree;
       return nodes;
     });
 
-    await deploySeedPrefabs(store);
+    await deploySeedPrefabs(tree);
 
-    assert.equal(receivedStore, store);
+    assert.equal(receivedStore, tree);
   });
 
   it('idempotent on second run', async () => {
@@ -408,8 +408,8 @@ describe('deploySeedPrefabs', () => {
       { $path: 'idem', $type: 'dir' } as NodeData,
     ]);
 
-    await deploySeedPrefabs(store);
-    await deploySeedPrefabs(store); // should not throw
-    assert.equal((await store.get('/idem'))?.$type, 'dir');
+    await deploySeedPrefabs(tree);
+    await deploySeedPrefabs(tree); // should not throw
+    assert.equal((await tree.get('/idem'))?.$type, 'dir');
   });
 });

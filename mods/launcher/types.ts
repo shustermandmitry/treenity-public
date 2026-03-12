@@ -17,7 +17,7 @@ export class Launcher {
     const id = data.id || data.path.split('/').at(-1) || Date.now().toString(36);
     const refPath = `${ctx.node.$path}/${id}`;
 
-    await ctx.store.set({ $path: refPath, $type: 'ref', $ref: data.path } as NodeData);
+    await ctx.tree.set({ $path: refPath, $type: 'ref', $ref: data.path } as NodeData);
 
     // Auto-place in layout as 1×1
     const items: { i: string; x: number; y: number; w: number; h: number }[] = JSON.parse(this.layout || '[]');
@@ -37,7 +37,7 @@ export class Launcher {
   async removeApp(data: { /** Child id (last path segment) */ id: string }) {
     if (!data.id?.trim()) throw new Error('id required');
     const ctx = getCtx();
-    await ctx.store.remove(`${ctx.node.$path}/${data.id}`);
+    await ctx.tree.remove(`${ctx.node.$path}/${data.id}`);
 
     const items: { i: string }[] = JSON.parse(this.layout || '[]');
     this.layout = JSON.stringify(items.filter(it => it.i !== data.id));

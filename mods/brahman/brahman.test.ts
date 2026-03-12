@@ -1,4 +1,4 @@
-// Brahman bot tests — fake Grammy, real store, full signal flow
+// Brahman bot tests — fake Grammy, real tree, full signal flow
 // Tests: template engine, keyboards, tag filtering, page/action execution, middleware
 
 import { type NodeData, resolve } from '@treenity/core';
@@ -133,21 +133,21 @@ function createFakeCtx(opts: {
 
 const BOT = '/test-bot';
 
-async function seedTestBot(store: Tree) {
+async function seedTestBot(tree: Tree) {
   // Bot node
-  await store.set({ $path: BOT, $type: 'brahman.bot', token: 'fake:token', langs: 'en,ru' } as NodeData);
+  await tree.set({ $path: BOT, $type: 'brahman.bot', token: 'fake:token', langs: 'en,ru' } as NodeData);
 
   // Dirs
   for (const d of ['pages', 'users', 'sessions'])
-    await store.set({ $path: `${BOT}/${d}`, $type: 'dir' } as NodeData);
+    await tree.set({ $path: `${BOT}/${d}`, $type: 'dir' } as NodeData);
 
   // /start page — fields on node directly (getComponent returns node when $type matches)
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/start`, $type: 'brahman.page',
     command: '/start', positions: [`${BOT}/pages/start/_actions/welcome`],
   } as NodeData);
 
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/start/_actions/welcome`, $type: 'brahman.action.message',
     text: { en: 'Welcome, {user.firstName}!', ru: 'Привет, {user.firstName}!' },
     menuType: 'keyboard',
@@ -160,28 +160,28 @@ async function seedTestBot(store: Tree) {
   } as NodeData);
 
   // /help page
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/help`, $type: 'brahman.page',
     command: '/help', positions: [`${BOT}/pages/help/_actions/msg`],
   } as NodeData);
 
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/help/_actions/msg`, $type: 'brahman.action.message',
     text: { en: 'Help page' }, menuType: 'none', rows: [],
   } as NodeData);
 
   // /about page with setvalue + message
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/about`, $type: 'brahman.page',
     command: '', positions: [`${BOT}/pages/about/_actions/setval`, `${BOT}/pages/about/_actions/msg`],
   } as NodeData);
 
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/about/_actions/setval`, $type: 'brahman.action.setvalue',
     value: '"visited"', saveTo: 'aboutStatus',
   } as NodeData);
 
-  await store.set({
+  await tree.set({
     $path: `${BOT}/pages/about/_actions/msg`, $type: 'brahman.action.message',
     text: { en: 'About us. Status: {aboutStatus}' }, menuType: 'none', rows: [],
   } as NodeData);
@@ -189,17 +189,17 @@ async function seedTestBot(store: Tree) {
 
 // ── Start the service with FakeBot ──
 
-async function startTestBot(store: Tree): Promise<FakeBot> {
+async function startTestBot(tree: Tree): Promise<FakeBot> {
   const fakeBot = new FakeBot();
   const handler = resolve('brahman.bot', 'service') as any;
   assert.ok(handler, 'brahman.bot service handler must be registered');
 
-  const botNode = await store.get(BOT);
+  const botNode = await tree.get(BOT);
   assert.ok(botNode, 'bot node must exist');
 
   setBotFactory(() => fakeBot);
   const svcCtx: ServiceCtx = {
-    store,
+    tree,
     subscribe: () => () => {},
   };
 
@@ -345,13 +345,13 @@ describe('brahman buildReplyMarkup', () => {
 });
 
 describe('brahman full signal flow', () => {
-  let store: Tree;
+  let tree: Tree;
   let bot: FakeBot;
 
   before(async () => {
-    store = createMemoryTree();
-    await seedTestBot(store);
-    bot = await startTestBot(store);
+    tree = createMemoryTree();
+    await seedTestBot(tree);
+    bot = await startTestBot(tree);
   });
 
   after(() => setBotFactory(undefined));
@@ -361,11 +361,11 @@ describe('brahman full signal flow', () => {
     await bot.dispatch(ctx, 'command', 'start');
 
     // Session should be created
-    const session = await store.get(`${BOT}/sessions/100`);
+    const session = await tree.get(`${BOT}/sessions/100`);
     assert.ok(session, 'session created');
 
     // User should be created
-    const user = await store.get(`${BOT}/users/100`);
+    const user = await tree.get(`${BOT}/users/100`);
     assert.ok(user, 'user created');
 
     // Welcome message sent with template resolved
@@ -461,13 +461,13 @@ describe('brahman full signal flow', () => {
 
   it('banned user → silently dropped', async () => {
     // Create a banned user
-    await store.set({
+    await tree.set({
       $path: `${BOT}/users/600`, $type: 'brahman.user',
       tid: 600, firstName: 'Bad', lastName: 'User', username: 'bad',
       lang: 'en', isAdmin: false, blocked: false, banned: true, tags: [],
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/sessions/600`, $type: 'brahman.session',
       tid: 600, data: {}, history: [], callbacks: {},
     } as NodeData);
@@ -505,7 +505,7 @@ describe('brahman full signal flow', () => {
     await bot.dispatch(ctx2, 'callback');
 
     // Check session was saved with aboutStatus
-    const sessionNode = await store.get(`${BOT}/sessions/800`);
+    const sessionNode = await tree.get(`${BOT}/sessions/800`);
     assert.ok(sessionNode);
     // With flat storage, data is directly on the node
     const sessionData = (sessionNode as any).data;
@@ -519,7 +519,7 @@ describe('brahman full signal flow', () => {
     const ctx2 = createFakeCtx({ userId: 900, text: '/help' });
     await bot.dispatch(ctx2, 'command', 'help');
 
-    const sessionNode = await store.get(`${BOT}/sessions/900`);
+    const sessionNode = await tree.get(`${BOT}/sessions/900`);
     assert.ok(sessionNode);
     const history = (sessionNode as any).history;
     assert.ok(Array.isArray(history));
@@ -538,19 +538,19 @@ describe('brahman bot start/stop actions', () => {
   it('action:start delegates to autostart via ctx.nc', async () => {
     const handler = resolve('brahman.bot', 'action:start')!;
     const node = { $path: '/b', $type: 'brahman.bot', token: 't' } as NodeData;
-    const store = createMemoryTree();
-    // No autostart node in store → executeAction throws NOT_FOUND
+    const tree = createMemoryTree();
+    // No autostart node in tree → executeAction throws NOT_FOUND
     await assert.rejects(
-      () => handler({ node, store, signal: AbortSignal.timeout(1000), nc: serverNodeHandle(store) }, undefined) as Promise<void>,
+      () => handler({ node, tree, signal: AbortSignal.timeout(1000), nc: serverNodeHandle(tree) }, undefined) as Promise<void>,
     );
   });
 
   it('action:stop delegates to autostart via ctx.nc', async () => {
     const handler = resolve('brahman.bot', 'action:stop')!;
     const node = { $path: '/b', $type: 'brahman.bot', token: 't' } as NodeData;
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     await assert.rejects(
-      () => handler({ node, store, signal: AbortSignal.timeout(1000), nc: serverNodeHandle(store) }, undefined) as Promise<void>,
+      () => handler({ node, tree, signal: AbortSignal.timeout(1000), nc: serverNodeHandle(tree) }, undefined) as Promise<void>,
     );
   });
 
@@ -564,7 +564,7 @@ describe('brahman bot start/stop actions', () => {
     setBotFactory(() => fb);
 
     const handler = resolve('brahman.bot', 'service') as any;
-    const handle = await handler(await s.get('/b2'), { store: s, subscribe: () => () => {} });
+    const handle = await handler(await s.get('/b2'), { tree: s, subscribe: () => () => {} });
 
     assert.equal(fb.started, false, 'bot should not be started when running=false');
 
@@ -582,7 +582,7 @@ describe('brahman bot start/stop actions', () => {
     setBotFactory(() => fb);
 
     const handler = resolve('brahman.bot', 'service') as any;
-    const handle = await handler(await s.get('/b3'), { store: s, subscribe: () => () => {} });
+    const handle = await handler(await s.get('/b3'), { tree: s, subscribe: () => () => {} });
 
     assert.equal(fb.started, true, 'bot should be started by default');
 
@@ -601,7 +601,7 @@ describe('brahman bot start/stop actions', () => {
     setBotFactory(() => fb);
 
     const handler = resolve('brahman.bot', 'service') as any;
-    const handle = await handler(await s.get('/b4'), { store: s, subscribe: () => () => {} });
+    const handle = await handler(await s.get('/b4'), { tree: s, subscribe: () => () => {} });
 
     const node = await s.get('/b4');
     assert.equal((node as any).alias, '@my_cool_bot');
@@ -622,7 +622,7 @@ describe('brahman bot start/stop actions', () => {
     setBotFactory(() => fb);
 
     const handler = resolve('brahman.bot', 'service') as any;
-    const handle = await handler(await s.get('/b5'), { store: s, subscribe: () => () => {} });
+    const handle = await handler(await s.get('/b5'), { tree: s, subscribe: () => () => {} });
 
     const node = await s.get('/b5');
     assert.equal((node as any).alias, '@custom');
@@ -634,31 +634,31 @@ describe('brahman bot start/stop actions', () => {
 });
 
 describe('brahman persistent wait', () => {
-  let store: Tree;
+  let tree: Tree;
   let bot: FakeBot;
 
   before(async () => {
-    store = createMemoryTree();
-    await seedTestBot(store);
+    tree = createMemoryTree();
+    await seedTestBot(tree);
 
     // Add a page with question + follow-up message
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/ask`, $type: 'brahman.page',
       command: '/ask',
       positions: [`${BOT}/pages/ask/_actions/q`, `${BOT}/pages/ask/_actions/reply`],
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/ask/_actions/q`, $type: 'brahman.action.question',
       text: { en: 'What is your name?' }, inputType: 'text', saveTo: 'userName', deleteMessages: false,
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/ask/_actions/reply`, $type: 'brahman.action.message',
       text: { en: 'Hello, {userName}!' }, menuType: 'none', rows: [],
     } as NodeData);
 
-    bot = await startTestBot(store);
+    bot = await startTestBot(tree);
   });
 
   after(() => setBotFactory(undefined));
@@ -672,8 +672,8 @@ describe('brahman persistent wait', () => {
     const replies1 = ctx1._sent.filter((s: Sent) => s.method === 'reply');
     assert.ok(replies1.some((r: Sent) => (r.args[0] as string).includes('What is your name?')));
 
-    // session.wait persisted in store
-    const session1 = await store.get(`${BOT}/sessions/1100`);
+    // session.wait persisted in tree
+    const session1 = await tree.get(`${BOT}/sessions/1100`);
     assert.ok(session1);
     const wait = (session1 as any).data?.wait;
     assert.ok(wait, 'session.wait should be set');
@@ -693,22 +693,22 @@ describe('brahman persistent wait', () => {
     );
 
     // wait state cleared
-    const session2 = await store.get(`${BOT}/sessions/1100`);
+    const session2 = await tree.get(`${BOT}/sessions/1100`);
     assert.equal((session2 as any).data?.wait, undefined, 'wait should be cleared after answer');
     assert.equal((session2 as any).data?.userName, 'Alice', 'answer saved to session');
   });
 
-  it('wait survives simulated restart (new bot instance, same store)', async () => {
+  it('wait survives simulated restart (new bot instance, same tree)', async () => {
     // Trigger /ask on fresh user
     const ctx1 = createFakeCtx({ userId: 1200, text: '/ask' });
     await bot.dispatch(ctx1, 'command', 'ask');
 
-    // Verify wait is set in store
-    const session1 = await store.get(`${BOT}/sessions/1200`);
+    // Verify wait is set in tree
+    const session1 = await tree.get(`${BOT}/sessions/1200`);
     assert.ok((session1 as any).data?.wait, 'wait persisted');
 
-    // "Restart" — create a new bot instance with the same store
-    const bot2 = await startTestBot(store);
+    // "Restart" — create a new bot instance with the same tree
+    const bot2 = await startTestBot(tree);
 
     // Answer comes to new bot instance
     const ctx2 = createFakeCtx({ userId: 1200, text: 'Bob' });
@@ -720,7 +720,7 @@ describe('brahman persistent wait', () => {
       'answer resolved after restart',
     );
 
-    const session2 = await store.get(`${BOT}/sessions/1200`);
+    const session2 = await tree.get(`${BOT}/sessions/1200`);
     assert.equal((session2 as any).data?.userName, 'Bob');
     assert.equal((session2 as any).data?.wait, undefined, 'wait cleared after restart resolve');
   });
@@ -728,11 +728,11 @@ describe('brahman persistent wait', () => {
   it('non-matching message type does not resolve wait', async () => {
 
     // Set up a wait for photo type
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/photo`, $type: 'brahman.page',
       command: '/photo', positions: [`${BOT}/pages/photo/_actions/q`],
     } as NodeData);
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/photo/_actions/q`, $type: 'brahman.action.question',
       text: { en: 'Send a photo' }, inputType: 'photo', saveTo: 'photoId', deleteMessages: false,
     } as NodeData);
@@ -744,7 +744,7 @@ describe('brahman persistent wait', () => {
     const ctx2 = createFakeCtx({ userId: 1300, text: 'not a photo' });
     await bot.dispatch(ctx2, 'text');
 
-    const session = await store.get(`${BOT}/sessions/1300`);
+    const session = await tree.get(`${BOT}/sessions/1300`);
     assert.ok((session as any).data?.wait, 'wait should still be pending (wrong type)');
   });
 });
@@ -762,29 +762,29 @@ registerType('test.brahman.target', _TestTarget);
 
 describe('brahman.action.call', () => {
   it('calls tree action via server executeAction and saves result', async () => {
-    const store = createMemoryTree();
-    await seedTestBot(store);
-    const bot = await startTestBot(store);
+    const tree = createMemoryTree();
+    await seedTestBot(tree);
+    const bot = await startTestBot(tree);
 
     // Target node with test type
-    await store.set({
+    await tree.set({
       $path: '/targets/counter', $type: 'test.brahman.target',
       value: 10,
     } as NodeData);
 
     // Page with CallAction → message showing result
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/call-test`, $type: 'brahman.page',
       command: '/calltest',
       positions: [`${BOT}/pages/call-test/_actions/call`, `${BOT}/pages/call-test/_actions/result`],
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/call-test/_actions/call`, $type: 'brahman.action.call',
       path: '/targets/counter', action: 'bump', saveTo: 'bumpResult',
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/call-test/_actions/result`, $type: 'brahman.action.message',
       text: { en: 'Bumped: {bumpResult}' }, menuType: 'none', rows: [],
     } as NodeData);
@@ -800,23 +800,23 @@ describe('brahman.action.call', () => {
     );
 
     // Target node mutated via Immer draft
-    const target = await store.get('/targets/counter');
+    const target = await tree.get('/targets/counter');
     assert.equal((target as any).value, 11);
 
     setBotFactory(undefined);
   });
 
   it('formats path template from session vars', async () => {
-    const store = createMemoryTree();
-    await seedTestBot(store);
-    const bot = await startTestBot(store);
+    const tree = createMemoryTree();
+    await seedTestBot(tree);
+    const bot = await startTestBot(tree);
 
-    await store.set({
+    await tree.set({
       $path: '/items/abc', $type: 'test.brahman.target', value: 5,
     } as NodeData);
 
     // Page: setvalue to set itemId → call with templated path
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/tcall`, $type: 'brahman.page',
       command: '/tcall',
       positions: [
@@ -826,17 +826,17 @@ describe('brahman.action.call', () => {
       ],
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/tcall/_actions/setid`, $type: 'brahman.action.setvalue',
       value: '"abc"', saveTo: 'itemId',
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/tcall/_actions/call`, $type: 'brahman.action.call',
       path: '/items/{itemId}', action: 'bump', saveTo: 'res',
     } as NodeData);
 
-    await store.set({
+    await tree.set({
       $path: `${BOT}/pages/tcall/_actions/msg`, $type: 'brahman.action.message',
       text: { en: 'Result: {res}' }, menuType: 'none', rows: [],
     } as NodeData);

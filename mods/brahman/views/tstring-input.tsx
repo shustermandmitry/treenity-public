@@ -1,6 +1,10 @@
 // TString editor — tabbed multilingual text input
 // Used by message, question, and menu button editors
 
+import { Button } from '@treenity/react/components/ui/button';
+import { Input } from '@treenity/react/components/ui/input';
+import { Textarea } from '@treenity/react/components/ui/textarea';
+import { cn } from '@treenity/react/lib/utils';
 import { useState } from 'react';
 import type { TString } from '../types';
 
@@ -19,28 +23,31 @@ export function TStringInput({ value = {}, onChange, langs = ['ru', 'en'], rows 
     <div>
       <div className="flex gap-0.5 mb-1">
         {langs.map(lang => (
-          <button
+          <Button
             key={lang}
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setActiveLang(lang)}
-            className={`px-2.5 py-1 text-xs font-medium uppercase rounded-t transition-colors ${
+            className={cn(
+              'px-2.5 py-1 h-auto text-xs font-medium uppercase rounded-t',
               activeLang === lang
                 ? 'bg-muted text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+                : 'text-muted-foreground hover:text-foreground',
+            )}
           >
             {lang}
             {value[lang] ? '' : ' *'}
-          </button>
+          </Button>
         ))}
       </div>
 
-      <textarea
-        className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md resize-none outline-none focus:border-primary transition-colors"
+      <Textarea
         rows={rows}
         placeholder={placeholder ?? `Text (${activeLang})`}
         value={value[activeLang] ?? ''}
         onChange={e => onChange({ ...value, [activeLang]: e.target.value })}
+        className="resize-none"
       />
     </div>
   );
@@ -51,23 +58,26 @@ export function TStringLineInput({ value = {}, onChange, langs = ['ru', 'en'], p
   const [activeLang, setActiveLang] = useState(langs[0] ?? 'ru');
 
   return (
-    <div className="flex items-center gap-1 border border-border rounded-md overflow-hidden bg-background">
+    <div className="flex items-center gap-1 border border-input rounded-md overflow-hidden bg-background">
       {langs.map(lang => (
-        <button
+        <Button
           key={lang}
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => setActiveLang(lang)}
-          className={`px-2 py-1 text-[10px] font-medium uppercase shrink-0 ${
-            activeLang === lang ? 'text-primary' : 'text-muted-foreground'
-          }`}
+          className={cn(
+            'px-2 py-1 h-auto text-[10px] font-medium uppercase shrink-0',
+            activeLang === lang ? 'text-primary' : 'text-muted-foreground',
+          )}
         >
           {lang}
-        </button>
+        </Button>
       ))}
 
-      <input
+      <Input
         type="text"
-        className="flex-1 px-2 py-1.5 text-sm outline-none bg-transparent"
+        className="flex-1 border-0 shadow-none focus-visible:ring-0"
         placeholder={placeholder ?? `Text (${activeLang})`}
         value={value[activeLang] ?? ''}
         onChange={e => onChange({ ...value, [activeLang]: e.target.value })}

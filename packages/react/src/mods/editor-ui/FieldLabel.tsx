@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#components/ui/dropdown-menu';
+import { Input } from '#components/ui/input';
 import { isRef } from '@treenity/core';
 import { useState } from 'react';
 
@@ -101,8 +102,8 @@ export function RefEditor({ value, onChange }: {
     <div className="flex flex-col gap-1 flex-1 min-w-0">
       <div className="flex items-center gap-1">
         <span className="text-[9px] text-muted-foreground shrink-0 w-5">$ref</span>
-        <input
-          className="flex-1 min-w-0"
+        <Input
+          className="h-7 text-xs flex-1 min-w-0"
           value={value.$ref}
           onChange={(e) => onChange(hasMap ? { $ref: e.target.value, $map: value.$map } : { $ref: e.target.value })}
           placeholder="path"
@@ -111,8 +112,8 @@ export function RefEditor({ value, onChange }: {
       {hasMap && (
         <div className="flex items-center gap-1">
           <span className="text-[9px] text-muted-foreground shrink-0 w-5">$map</span>
-          <input
-            className="flex-1 min-w-0"
+          <Input
+            className="h-7 text-xs flex-1 min-w-0"
             value={value.$map ?? ''}
             onChange={(e) => onChange({ $ref: value.$ref, $map: e.target.value })}
             placeholder="field"

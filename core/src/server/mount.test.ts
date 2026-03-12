@@ -23,7 +23,7 @@ describe('Mounts', () => {
     register('test.mount.memory', 'mount', () => usersStore);
   });
 
-  it('delegates get to mounted store', async () => {
+  it('delegates get to mounted tree', async () => {
     await rootStore.set(
       createNode('/users', 'collection', {}, {
         mount: { $type: 'test.mount.memory' },
@@ -37,7 +37,7 @@ describe('Mounts', () => {
     assert.equal(alice?.$type, 't.user');
   });
 
-  it('returns mount node from parent store', async () => {
+  it('returns mount node from parent tree', async () => {
     await rootStore.set(
       createNode('/users', 'collection', {}, {
         mount: { $type: 'test.mount.memory' },
@@ -48,7 +48,7 @@ describe('Mounts', () => {
     assert.equal(node?.$type, 't.collection');
   });
 
-  it('delegates getChildren to mounted store', async () => {
+  it('delegates getChildren to mounted tree', async () => {
     await rootStore.set(
       createNode('/users', 'collection', {}, {
         mount: { $type: 'test.mount.memory' },
@@ -62,7 +62,7 @@ describe('Mounts', () => {
     assert.equal(children.items.length, 2);
   });
 
-  it('delegates set to mounted store', async () => {
+  it('delegates set to mounted tree', async () => {
     await rootStore.set(
       createNode('/users', 'collection', {}, {
         mount: { $type: 'test.mount.memory' },
@@ -74,7 +74,7 @@ describe('Mounts', () => {
     assert.equal(charlie?.$type, 't.user');
   });
 
-  it('delegates remove to mounted store', async () => {
+  it('delegates remove to mounted tree', async () => {
     await rootStore.set(
       createNode('/users', 'collection', {}, {
         mount: { $type: 'test.mount.memory' },
@@ -87,7 +87,7 @@ describe('Mounts', () => {
     assert.equal(await usersStore.get('/users/alice'), undefined);
   });
 
-  it('falls back to root store for unmounted paths', async () => {
+  it('falls back to root tree for unmounted paths', async () => {
     await rootStore.set(createNode('/config', 'settings'));
     const ms = withMounts(rootStore);
     const config = await ms.get('/config');
@@ -156,7 +156,7 @@ describe('Mounts', () => {
 
   // ── Root mount ──
 
-  it('root mount: delegates children to mounted store', async () => {
+  it('root mount: delegates children to mounted tree', async () => {
     const dataStore = createMemoryTree();
     await dataStore.set(createNode('/foo', 'item'));
     await dataStore.set(createNode('/bar', 'item'));
@@ -185,7 +185,7 @@ describe('Mounts', () => {
     assert.equal(root?.$type, 't.root');
   });
 
-  it('root mount: get delegates to mounted store', async () => {
+  it('root mount: get delegates to mounted tree', async () => {
     const dataStore = createMemoryTree();
     await dataStore.set(createNode('/hello', 'greeting'));
     register('test.mount.data', 'mount', () => dataStore);
@@ -199,7 +199,7 @@ describe('Mounts', () => {
     assert.equal(node?.$type, 't.greeting');
   });
 
-  it('root mount: set writes to mounted store', async () => {
+  it('root mount: set writes to mounted tree', async () => {
     const dataStore = createMemoryTree();
     register('test.mount.data', 'mount', () => dataStore);
     await rootStore.set(
@@ -247,7 +247,7 @@ describe('Mounts', () => {
     assert.equal(children.items.length, 1);
   });
 
-  it('nested mount: adapter receives parent store as deps', async () => {
+  it('nested mount: adapter receives parent tree as deps', async () => {
     const dataStore = createMemoryTree();
     let receivedDeps: unknown = null;
     register('test.mount.data', 'mount', () => dataStore);
@@ -397,7 +397,7 @@ describe('Types mount adapter', () => {
     assert.equal(node?.$type, 't.dir');
   });
 
-  it('falls back to backing store for dynamic types', async () => {
+  it('falls back to backing tree for dynamic types', async () => {
     await backingStore.set(createNode('/types/custom/card', 'type'));
     const ts = createTypesStore(backingStore, '/types');
     const node = await ts.get('/types/custom/card');
@@ -446,14 +446,14 @@ describe('Types mount adapter', () => {
     assert.equal(reactEdit.$type, 'react:edit');
   });
 
-  it('set goes to backing store', async () => {
+  it('set goes to backing tree', async () => {
     const ts = createTypesStore(backingStore, '/types');
     await ts.set(createNode('/types/custom/card', 'type'));
     const stored = await backingStore.get('/types/custom/card');
     assert.equal(stored?.$type, 't.type');
   });
 
-  it('remove deletes dynamic type from backing store', async () => {
+  it('remove deletes dynamic type from backing tree', async () => {
     const ts = createTypesStore(backingStore, '/types');
     await ts.set(createNode('/types/custom/card', 'type'));
     const removed = await ts.remove('/types/custom/card');

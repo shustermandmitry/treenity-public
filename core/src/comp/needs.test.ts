@@ -135,13 +135,13 @@ describe('collectDeps', () => {
     registerType('t.article', Article);
     registerType('t.status', Status);
 
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/a', 'page', {}, {
       article: { $type: 't.article', title: 'old' },
       status: { $type: 't.status', value: 'draft' },
     });
 
-    const deps = await collectDeps(node, 'article', 'publish', store);
+    const deps = await collectDeps(node, 'article', 'publish', tree);
     assert.equal(Object.keys(deps).length, 1);
     assert.equal((deps.status as any).value, 'draft');
   });
@@ -155,13 +155,13 @@ describe('collectDeps', () => {
 
     registerType('t.connector', Connector);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/config/warehouse', 'warehouse', { capacity: 100 }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/config/warehouse', 'warehouse', { capacity: 100 }));
     const node = createNode('/order/1', 'page', {}, {
       connector: { $type: 't.connector', targetRef: '/config/warehouse' },
     });
 
-    const deps = await collectDeps(node, 'connector', 'check', store);
+    const deps = await collectDeps(node, 'connector', 'check', tree);
     assert.equal((deps.targetRef as any).$path, '/config/warehouse');
     assert.equal((deps.targetRef as any).capacity, 100);
   });
@@ -174,13 +174,13 @@ describe('collectDeps', () => {
 
     registerType('t.parent', Parent);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/app/config', 'cfg', { debug: true }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/app/config', 'cfg', { debug: true }));
     const node = createNode('/app', 'dir', {}, {
       parent: { $type: 't.parent' },
     });
 
-    const deps = await collectDeps(node, 'parent', 'run', store);
+    const deps = await collectDeps(node, 'parent', 'run', tree);
     assert.equal((deps.config as any).$path, '/app/config');
     assert.equal((deps.config as any).debug, true);
   });
@@ -193,13 +193,13 @@ describe('collectDeps', () => {
 
     registerType('t.child', Child);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/app/settings', 'cfg', { lang: 'en' }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/app/settings', 'cfg', { lang: 'en' }));
     const node = createNode('/app/module', 'dir', {}, {
       child: { $type: 't.child' },
     });
 
-    const deps = await collectDeps(node, 'child', 'run', store);
+    const deps = await collectDeps(node, 'child', 'run', tree);
     assert.equal((deps.settings as any).$path, '/app/settings');
     assert.equal((deps.settings as any).lang, 'en');
   });
@@ -212,13 +212,13 @@ describe('collectDeps', () => {
 
     registerType('t.widget', Widget);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/sys/config', 'cfg', { version: 2 }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/sys/config', 'cfg', { version: 2 }));
     const node = createNode('/ui/widget', 'dir', {}, {
       widget: { $type: 't.widget' },
     });
 
-    const deps = await collectDeps(node, 'widget', 'init', store);
+    const deps = await collectDeps(node, 'widget', 'init', tree);
     assert.equal((deps.config as any).$path, '/sys/config');
     assert.equal((deps.config as any).version, 2);
   });
@@ -231,14 +231,14 @@ describe('collectDeps', () => {
 
     registerType('t.list', List);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/orders/1/items/a', 'item', { name: 'apple' }));
-    await store.set(createNode('/orders/1/items/b', 'item', { name: 'banana' }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/orders/1/items/a', 'item', { name: 'apple' }));
+    await tree.set(createNode('/orders/1/items/b', 'item', { name: 'banana' }));
     const node = createNode('/orders/1', 'order', {}, {
       list: { $type: 't.list' },
     });
 
-    const deps = await collectDeps(node, 'list', 'report', store);
+    const deps = await collectDeps(node, 'list', 'report', tree);
     assert.ok(Array.isArray(deps.items));
     assert.equal((deps.items as any[]).length, 2);
   });
@@ -257,16 +257,16 @@ describe('collectDeps', () => {
     registerType('t.order-status', OrderStatus);
     registerType('t.payment', Payment);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/config/wh', 'warehouse', { capacity: 50 }));
-    await store.set(createNode('/order/1/items/x', 'item', { qty: 3 }));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/config/wh', 'warehouse', { capacity: 50 }));
+    await tree.set(createNode('/order/1/items/x', 'item', { qty: 3 }));
 
     const node = createNode('/order/1', 'order', {}, {
       status: { $type: 't.order-status', value: 'draft', warehouseRef: '/config/wh' },
       payment: { $type: 't.payment', amount: 100, settled: false },
     });
 
-    const deps = await collectDeps(node, 'status', 'advance', store);
+    const deps = await collectDeps(node, 'status', 'advance', tree);
 
     // sibling
     assert.equal((deps.payment as any).amount, 100);
@@ -284,20 +284,20 @@ describe('collectDeps', () => {
     }
 
     registerType('t.simple', Simple);
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/x', 'dir', {}, { simple: { $type: 't.simple' } });
 
-    const deps = await collectDeps(node, 'simple', 'run', store);
+    const deps = await collectDeps(node, 'simple', 'run', tree);
     assert.deepEqual(deps, {});
   });
 
   it('no static needs + no opts.needs = no deps', async () => {
     class Plain { run() {} }
     registerType('t.plain', Plain);
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/x', 'dir', {}, { plain: { $type: 't.plain' } });
 
-    const deps = await collectDeps(node, 'plain', 'run', store);
+    const deps = await collectDeps(node, 'plain', 'run', tree);
     assert.deepEqual(deps, {});
   });
 
@@ -309,10 +309,10 @@ describe('collectDeps', () => {
       run() {}
     }
     registerType('t.needs-missing', NeedsMissing);
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/x', 'dir', {}, { comp: { $type: 't.needs-missing' } });
 
-    await assert.rejects(() => collectDeps(node, 'comp', 'run', store));
+    await assert.rejects(() => collectDeps(node, 'comp', 'run', tree));
   });
 
   it('throws on missing @fieldRef target', async () => {
@@ -322,12 +322,12 @@ describe('collectDeps', () => {
       run() {}
     }
     registerType('t.bad-ref', BadRef);
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/x', 'dir', {}, {
       comp: { $type: 't.bad-ref', targetRef: '/nowhere' },
     });
 
-    await assert.rejects(() => collectDeps(node, 'comp', 'run', store));
+    await assert.rejects(() => collectDeps(node, 'comp', 'run', tree));
   });
 
   it('throws on missing path dep', async () => {
@@ -336,10 +336,10 @@ describe('collectDeps', () => {
       run() {}
     }
     registerType('t.bad-path', BadPath);
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/x', 'dir', {}, { comp: { $type: 't.bad-path' } });
 
-    await assert.rejects(() => collectDeps(node, 'comp', 'run', store));
+    await assert.rejects(() => collectDeps(node, 'comp', 'run', tree));
   });
 
   it('throws on @field that is not a string', async () => {
@@ -349,12 +349,12 @@ describe('collectDeps', () => {
       run() {}
     }
     registerType('t.bad-field', BadField as any);
-    const store = createMemoryTree();
+    const tree = createMemoryTree();
     const node = createNode('/x', 'dir', {}, {
       comp: { $type: 't.bad-field', targetRef: 42 },
     });
 
-    await assert.rejects(() => collectDeps(node, 'comp', 'run', store));
+    await assert.rejects(() => collectDeps(node, 'comp', 'run', tree));
   });
 
   it('throws on duplicate dep keys', async () => {
@@ -364,14 +364,14 @@ describe('collectDeps', () => {
     }
     registerType('t.dup', DupKeys);
     registerType('t.payment', Payment);
-    const store = createMemoryTree();
-    await store.set(createNode('/other/payment', 'x'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/other/payment', 'x'));
     const node = createNode('/x', 'dir', {}, {
       comp: { $type: 't.dup' },
       payment: { $type: 't.payment', amount: 0, settled: false },
     });
 
-    await assert.rejects(() => collectDeps(node, 'comp', 'run', store));
+    await assert.rejects(() => collectDeps(node, 'comp', 'run', tree));
   });
 });
 
@@ -420,15 +420,15 @@ describe('executeAction with deps', () => {
     registerType('t.article', Article);
     registerType('t.status', Status);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/a', 'page', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/a', 'page', {}, {
       article: { $type: 't.article', title: 'old' },
       status: { $type: 't.status', value: 'draft' },
     }));
 
-    await executeAction(store, '/a', 't.article', undefined, 'publishAndRename', { title: 'new' });
+    await executeAction(tree, '/a', 't.article', undefined, 'publishAndRename', { title: 'new' });
 
-    const result = (await store.get('/a'))!;
+    const result = (await tree.get('/a'))!;
     assert.equal((result['article'] as any).title, 'new');
     assert.equal((result['status'] as any).value, 'published');
   });
@@ -455,19 +455,19 @@ describe('executeAction with deps', () => {
     registerType('t.status', Status);
     registerType('t.payment', Payment);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/p', 'page', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/p', 'page', {}, {
       processor: { $type: 't.processor', value: '' },
       status: { $type: 't.status', value: 'active' },
       payment: { $type: 't.payment', amount: 500, settled: false },
     }));
 
-    await executeAction(store, '/p', 't.processor', undefined, 'quick', {});
-    let result = (await store.get('/p'))!;
+    await executeAction(tree, '/p', 't.processor', undefined, 'quick', {});
+    let result = (await tree.get('/p'))!;
     assert.equal((result['processor'] as any).value, 'status=active');
 
-    await executeAction(store, '/p', 't.processor', undefined, 'full', {});
-    result = (await store.get('/p'))!;
+    await executeAction(tree, '/p', 't.processor', undefined, 'full', {});
+    result = (await tree.get('/p'))!;
     assert.equal((result['processor'] as any).value, 'status=active,amount=500');
   });
 
@@ -485,15 +485,15 @@ describe('executeAction with deps', () => {
 
     registerType('t.connector', Connector);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/config/wh', 'warehouse', { capacity: 50 }));
-    await store.set(createNode('/order/1', 'page', {}, {
+    const tree = createMemoryTree();
+    await tree.set(createNode('/config/wh', 'warehouse', { capacity: 50 }));
+    await tree.set(createNode('/order/1', 'page', {}, {
       connector: { $type: 't.connector', targetRef: '/config/wh', result: '' },
     }));
 
-    await executeAction(store, '/order/1', 't.connector', undefined, 'fetch', {});
+    await executeAction(tree, '/order/1', 't.connector', undefined, 'fetch', {});
 
-    const result = (await store.get('/order/1'))!;
+    const result = (await tree.get('/order/1'))!;
     assert.equal((result['connector'] as any).result, '/config/wh');
   });
 });

@@ -170,7 +170,7 @@ export function buildReplyMarkup(rows: MenuRow[], type: MenuType, lang: string, 
 /** @opaque Runtime-injected, not part of public schema */
 export type BrahmanCtx = {
   ctx: Context;
-  store: Tree;
+  tree: Tree;
   session: Record<string, unknown>;
   sessionNode: NodeData;
   user: NodeData;
@@ -254,7 +254,7 @@ export function buildLangKeyboard(langs: string[]) {
 // ── Page execution ──
 
 export async function executePage(pagePath: string, bCtx: BrahmanCtx): Promise<void> {
-  const pageNode = await bCtx.store.get(pagePath);
+  const pageNode = await bCtx.tree.get(pagePath);
   if (!pageNode) return;
 
   const pageComp = getComponent(pageNode, PageConfig);
@@ -264,7 +264,7 @@ export async function executePage(pagePath: string, bCtx: BrahmanCtx): Promise<v
   const history = (bCtx.session.history ?? []) as string[];
   history.push(pagePath);
 
-  const { items } = await bCtx.store.getChildren(pagePath + '/_actions');
+  const { items } = await bCtx.tree.getChildren(pagePath + '/_actions');
   const positions = pageComp.positions ?? [];
   const tracked = new Set(positions);
   const sorted = [
@@ -286,7 +286,7 @@ export async function executePage(pagePath: string, bCtx: BrahmanCtx): Promise<v
       const userData = getComponent(bCtx.user, BrahmanUser);
       if (userData) {
         (userData as any).blocked = true;
-        await bCtx.store.set(bCtx.user);
+        await bCtx.tree.set(bCtx.user);
       }
       return;
     }
@@ -296,7 +296,7 @@ export async function executePage(pagePath: string, bCtx: BrahmanCtx): Promise<v
     bCtx.session.error = { message: errorMsg };
 
     try {
-      const { items: pages } = await bCtx.store.getChildren(`${bCtx.botPath}/pages`);
+      const { items: pages } = await bCtx.tree.getChildren(`${bCtx.botPath}/pages`);
       const errorPage = pages.find(p => getComponent(p, PageConfig)?.command === '/error');
       if (errorPage) await executePage(errorPage.$path, bCtx);
     } catch (innerErr) {
@@ -313,7 +313,7 @@ const _neverAbort = new AbortController().signal;
 export async function executeAction(node: NodeData, bCtx: BrahmanCtx): Promise<void> {
   const handler = resolveCtx(node.$type, 'action:run');
   if (!handler) return;
-  await (handler as any)({ node, store: bCtx.store, signal: _neverAbort }, bCtx);
+  await (handler as any)({ node, tree: bCtx.tree, signal: _neverAbort }, bCtx);
 }
 
 // ── Sequential action runner with wait support ──
@@ -366,7 +366,7 @@ export async function resolveWait(bCtx: BrahmanCtx, gCtx: Context): Promise<bool
 
   // Execute remaining actions (may set a new wait if another question is encountered)
   if (remaining.length) {
-    const nodes = (await Promise.all(remaining.map(p => bCtx.store.get(p)))).filter(Boolean) as NodeData[];
+    const nodes = (await Promise.all(remaining.map(p => bCtx.tree.get(p)))).filter(Boolean) as NodeData[];
     await executeActions(nodes, bCtx);
   }
 

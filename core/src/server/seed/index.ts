@@ -10,15 +10,15 @@ export type Ensure = (
   modify?: (node: NodeData) => void,
 ) => Promise<void>;
 
-export function createEnsure(store: Tree): Ensure {
+export function createEnsure(tree: Tree): Ensure {
   return async (path, type, init, modify) => {
-    if (await store.get(path)) return;
+    if (await tree.get(path)) return;
     const node = { $path: path, $type: normalizeType(type), ...(init ? init() : {}) } as NodeData;
     if (modify) modify(node);
-    await store.set(node);
+    await tree.set(node);
   };
 }
 
-export async function seed(store: Tree) {
-  await deploySeedPrefabs(store);
+export async function seed(tree: Tree) {
+  await deploySeedPrefabs(tree);
 }

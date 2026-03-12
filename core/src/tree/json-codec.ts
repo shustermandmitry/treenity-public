@@ -1,4 +1,4 @@
-// JSON file ↔ node codec for RawFS store
+// JSON file ↔ node codec for RawFS tree
 // JSON files are plain objects — no metadata wrapping
 
 import type { NodeData } from '#core';

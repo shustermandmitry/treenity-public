@@ -1,5 +1,6 @@
 // import tailwindcss from '@tailwindcss/vite'; // disabled — using CDN in index.html
 import react from '@vitejs/plugin-react';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import treenityPlugin from './vite-plugin-treenity';
@@ -17,21 +18,7 @@ export default defineConfig({
   publicDir: 'public',
   optimizeDeps: {
     include: [
-      '@flowgram.ai/free-layout-editor',
-      '@flowgram.ai/editor',
-      '@flowgram.ai/core',
-      '@flowgram.ai/renderer',
-      '@flowgram.ai/document',
-      '@flowgram.ai/materials-plugin',
-      '@flowgram.ai/free-lines-plugin',
-      '@flowgram.ai/free-layout-core',
-      '@flowgram.ai/free-stack-plugin',
-      '@flowgram.ai/free-hover-plugin',
-      '@flowgram.ai/free-auto-layout-plugin',
-      '@flowgram.ai/select-box-plugin',
-      '@flowgram.ai/node',
-      '@flowgram.ai/node-core-plugin',
-      '@flowgram.ai/playground-react',
+      ...readdirSync(resolve(projectRoot, 'node_modules/@flowgram.ai')).map(d => `@flowgram.ai/${d}`),
       'inversify',
       'reflect-metadata',
     ],

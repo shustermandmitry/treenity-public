@@ -14,7 +14,7 @@ export type StoreEvent =
 export type StoreListener = (event: StoreEvent) => void;
 export type SubscribeOpts = { children?: boolean };
 export type ServiceCtx = {
-  store: Tree;
+  tree: Tree;
   subscribe: (path: string, cb: StoreListener, opts?: SubscribeOpts) => () => void;
 };
 export type ServiceHandler = (node: NodeData, ctx: ServiceCtx) => Promise<ServiceHandle>;
@@ -28,16 +28,16 @@ declare module '#core/context' {
 // ── Bootstrap ──
 
 export async function startServices(
-  store: Tree,
+  tree: Tree,
   subscribe: ServiceCtx['subscribe'],
   path = '/sys/autostart',
 ): Promise<ServiceHandle | null> {
-  const node = await store.get(path);
+  const node = await tree.get(path);
   if (!node) return null;
   const handler = resolveCtx(node.$type, 'service');
   if (!handler) {
     console.error(`[service] no handler for ${node.$type}`);
     return null;
   }
-  return await handler(node, { store, subscribe });
+  return await handler(node, { tree, subscribe });
 }

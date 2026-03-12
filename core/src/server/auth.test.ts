@@ -15,15 +15,15 @@ import {
   withAcl,
 } from './auth';
 
-let store: Tree;
+let tree: Tree;
 
 beforeEach(async () => {
   clearRegistry();
-  store = createMemoryTree();
+  tree = createMemoryTree();
   // Root: public read
-  await store.set({ ...createNode('/', 'root'), $acl: [{ g: 'public', p: R }] });
+  await tree.set({ ...createNode('/', 'root'), $acl: [{ g: 'public', p: R }] });
   // /users: authenticated read, public denied
-  await store.set({
+  await tree.set({
     ...createNode('/users', 'dir'),
     $acl: [
       { g: 'authenticated', p: R },
@@ -31,7 +31,7 @@ beforeEach(async () => {
     ],
   });
   // /users/alice: owner full, authenticated denied
-  await store.set({
+  await tree.set({
     ...createNode('/users/alice', 'user'),
     $owner: 'alice',
     $acl: [
@@ -39,9 +39,9 @@ beforeEach(async () => {
       { g: 'authenticated', p: 0 },
     ],
   });
-  await store.set(createNode('/users/alice/page', 'page'));
+  await tree.set(createNode('/users/alice/page', 'page'));
   // /users/bob
-  await store.set({
+  await tree.set({
     ...createNode('/users/bob', 'user'),
     $owner: 'bob',
     $acl: [
@@ -49,10 +49,10 @@ beforeEach(async () => {
       { g: 'authenticated', p: 0 },
     ],
   });
-  await store.set(createNode('/users/bob/page', 'page'));
+  await tree.set(createNode('/users/bob/page', 'page'));
   // /types: public read
-  await store.set({ ...createNode('/types', 'dir'), $acl: [{ g: 'public', p: R }] });
-  await store.set(createNode('/types/block.hero', 'type'));
+  await tree.set({ ...createNode('/types', 'dir'), $acl: [{ g: 'public', p: R }] });
+  await tree.set(createNode('/types/block.hero', 'type'));
 });
 
 describe('ancestorPaths', () => {
@@ -69,7 +69,7 @@ describe('ancestorPaths', () => {
 
 describe('resolvePermission', () => {
   it('alice has full access to her subtree', async () => {
-    const perm = await resolvePermission(store, '/users/alice/page', 'alice', [
+    const perm = await resolvePermission(tree, '/users/alice/page', 'alice', [
       'u:alice',
       'authenticated',
     ]);
@@ -77,7 +77,7 @@ describe('resolvePermission', () => {
   });
 
   it("bob cannot access alice's subtree (deny sticky)", async () => {
-    const perm = await resolvePermission(store, '/users/alice/page', 'bob', [
+    const perm = await resolvePermission(tree, '/users/alice/page', 'bob', [
       'u:bob',
       'authenticated',
     ]);
@@ -85,22 +85,22 @@ describe('resolvePermission', () => {
   });
 
   it('public can read root', async () => {
-    const perm = await resolvePermission(store, '/', null, ['public']);
+    const perm = await resolvePermission(tree, '/', null, ['public']);
     assert.equal(perm, R);
   });
 
   it('public can read /types', async () => {
-    const perm = await resolvePermission(store, '/types/block.hero', null, ['public']);
+    const perm = await resolvePermission(tree, '/types/block.hero', null, ['public']);
     assert.equal(perm, R);
   });
 
   it('public cannot write root', async () => {
-    const perm = await resolvePermission(store, '/', null, ['public']);
+    const perm = await resolvePermission(tree, '/', null, ['public']);
     assert.equal(perm & W, 0);
   });
 
   it('owner pseudo-group resolves via $owner', async () => {
-    const perm = await resolvePermission(store, '/users/alice', 'alice', [
+    const perm = await resolvePermission(tree, '/users/alice', 'alice', [
       'u:alice',
       'authenticated',
     ]);
@@ -109,19 +109,19 @@ describe('resolvePermission', () => {
 
   it('owner pseudo-group does not match wrong user', async () => {
     // bob matches "authenticated" which is denied at /users/alice
-    const perm = await resolvePermission(store, '/users/alice', 'bob', ['u:bob', 'authenticated']);
+    const perm = await resolvePermission(tree, '/users/alice', 'bob', ['u:bob', 'authenticated']);
     assert.equal(perm, 0);
   });
 
   it('deny is sticky — cannot override below', async () => {
     // Add a node below alice's denied subtree that tries to re-grant
-    const existing = await store.get('/users/alice/page');
-    await store.set({
+    const existing = await tree.get('/users/alice/page');
+    await tree.set({
       ...existing,
       ...createNode('/users/alice/page', 'page'),
       $acl: [{ g: 'authenticated', p: R }], // tries to re-grant
     });
-    const perm = await resolvePermission(store, '/users/alice/page', 'bob', [
+    const perm = await resolvePermission(tree, '/users/alice/page', 'bob', [
       'u:bob',
       'authenticated',
     ]);
@@ -130,13 +130,13 @@ describe('resolvePermission', () => {
 
   it('permission can widen when not denied', async () => {
     // /shared: authenticated read
-    await store.set({ ...createNode('/shared', 'dir'), $acl: [{ g: 'authenticated', p: R }] });
+    await tree.set({ ...createNode('/shared', 'dir'), $acl: [{ g: 'authenticated', p: R }] });
     // /shared/editable: authenticated read+write
-    await store.set({
+    await tree.set({
       ...createNode('/shared/editable', 'dir'),
       $acl: [{ g: 'authenticated', p: R | W }],
     });
-    const perm = await resolvePermission(store, '/shared/editable', 'bob', [
+    const perm = await resolvePermission(tree, '/shared/editable', 'bob', [
       'u:bob',
       'authenticated',
     ]);
@@ -145,7 +145,7 @@ describe('resolvePermission', () => {
 
   it('inherits from parent when no $acl', async () => {
     // /users/alice/page has no $acl, inherits from /users/alice
-    const perm = await resolvePermission(store, '/users/alice/page', 'alice', [
+    const perm = await resolvePermission(tree, '/users/alice/page', 'alice', [
       'u:alice',
       'authenticated',
     ]);
@@ -155,7 +155,7 @@ describe('resolvePermission', () => {
   it('caches results', async () => {
     const cache = new Map<string, number>();
     await resolvePermission(
-      store,
+      tree,
       '/users/alice/page',
       'alice',
       ['u:alice', 'authenticated'],
@@ -164,7 +164,7 @@ describe('resolvePermission', () => {
     assert.ok(cache.has('/users/alice/page'));
     // Second call uses cache
     const perm = await resolvePermission(
-      store,
+      tree,
       '/users/alice/page',
       'alice',
       ['u:alice', 'authenticated'],
@@ -174,8 +174,8 @@ describe('resolvePermission', () => {
   });
 
   it('admin group gets full access', async () => {
-    const root = await store.get('/');
-    await store.set({
+    const root = await tree.get('/');
+    await tree.set({
       ...root,
       ...createNode('/', 'root'),
       $acl: [
@@ -183,7 +183,7 @@ describe('resolvePermission', () => {
         { g: 'admins', p: R | W | A },
       ],
     });
-    const perm = await resolvePermission(store, '/users/alice/page', 'admin', [
+    const perm = await resolvePermission(tree, '/users/alice/page', 'admin', [
       'u:admin',
       'authenticated',
       'admins',
@@ -268,18 +268,18 @@ describe('stripComponents', () => {
 
 describe('buildClaims', () => {
   it('basic claims without groups', async () => {
-    const claims = await buildClaims(store, 'alice');
+    const claims = await buildClaims(tree, 'alice');
     assert.ok(claims.includes('u:alice'));
     assert.ok(claims.includes('authenticated'));
   });
 
   it('includes groups from user node', async () => {
-    await store.set({
+    await tree.set({
       ...createNode('/auth/users/alice', 'user'),
       $owner: 'alice',
       groups: { $type: 'groups', list: ['admins', 'editors'] },
     });
-    const claims = await buildClaims(store, 'alice');
+    const claims = await buildClaims(tree, 'alice');
     assert.ok(claims.includes('admins'));
     assert.ok(claims.includes('editors'));
     assert.ok(claims.includes('u:alice'));
@@ -290,7 +290,7 @@ describe('buildClaims', () => {
 describe('granular sticky deny', () => {
   it('parent denies W (sticky), child cannot grant W', async () => {
     // /docs: editors can R, deny W sticky
-    await store.set({
+    await tree.set({
       ...createNode('/docs', 'dir'),
       $acl: [
         { g: 'editors', p: R },
@@ -298,47 +298,47 @@ describe('granular sticky deny', () => {
       ],
     });
     // /docs/page: editors try to grant W
-    await store.set({
+    await tree.set({
       ...createNode('/docs/page', 'doc'),
       $acl: [{ g: 'editors', p: R | W }],
     });
-    const perm = await resolvePermission(store, '/docs/page', 'ed1', ['u:ed1', 'editors']);
+    const perm = await resolvePermission(tree, '/docs/page', 'ed1', ['u:ed1', 'editors']);
     assert.equal(perm, R); // W is masked out
   });
 
   it('parent denies A only, allows R|W', async () => {
-    await store.set({
+    await tree.set({
       ...createNode('/projects', 'dir'),
       $acl: [
         { g: 'devs', p: R | W },
         { g: 'devs', p: -A },
       ],
     });
-    await store.set(createNode('/projects/app', 'doc'));
-    const perm = await resolvePermission(store, '/projects/app', 'dev1', ['u:dev1', 'devs']);
+    await tree.set(createNode('/projects/app', 'doc'));
+    const perm = await resolvePermission(tree, '/projects/app', 'dev1', ['u:dev1', 'devs']);
     assert.equal(perm, R | W); // A denied sticky
   });
 
   it('child tries to grant denied bits, they are masked', async () => {
-    await store.set({
+    await tree.set({
       ...createNode('/wiki', 'dir'),
       $acl: [{ g: 'readers', p: -(W | A) }],
     });
-    await store.set({
+    await tree.set({
       ...createNode('/wiki/article', 'doc'),
       $acl: [{ g: 'readers', p: R | W | A }],
     });
-    const perm = await resolvePermission(store, '/wiki/article', 'r1', ['u:r1', 'readers']);
+    const perm = await resolvePermission(tree, '/wiki/article', 'r1', ['u:r1', 'readers']);
     assert.equal(perm, R); // W|A denied, only R remains
   });
 
   it('p=0 still works as deny all (backward compat)', async () => {
-    await store.set({
+    await tree.set({
       ...createNode('/private', 'dir'),
       $acl: [{ g: 'public', p: 0 }],
     });
-    await store.set(createNode('/private/secret', 'doc'));
-    const perm = await resolvePermission(store, '/private/secret', null, ['public']);
+    await tree.set(createNode('/private/secret', 'doc'));
+    const perm = await resolvePermission(tree, '/private/secret', null, ['public']);
     assert.equal(perm, 0);
   });
 
@@ -360,17 +360,17 @@ describe('granular sticky deny', () => {
 
 describe('withAcl', () => {
   it('alice reads her own page', async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     assert.ok(await s.get('/users/alice/page'));
   });
 
   it("alice cannot read bob's page", async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     assert.equal(await s.get('/users/bob/page'), undefined);
   });
 
   it('filters getChildren', async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     const children = await s.getChildren('/users', { depth: Infinity });
     const paths = children.items.map((c) => c.$path);
     assert.ok(paths.includes('/users/alice'));
@@ -378,39 +378,39 @@ describe('withAcl', () => {
   });
 
   it('throws on write without permission', async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     await assert.rejects(() => s.set(createNode('/users/bob/x', 'x')));
   });
 
   it('allows write within own subtree', async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     await s.set(createNode('/users/alice/new', 'doc'));
-    assert.ok(await store.get('/users/alice/new'));
+    assert.ok(await tree.get('/users/alice/new'));
   });
 
   it('throws on remove without permission', async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     await assert.rejects(() => s.remove('/users/bob/page'));
   });
 
   it('unauthenticated: public read only', async () => {
-    const s = withAcl(store, null, ['public']);
+    const s = withAcl(tree, null, ['public']);
     assert.ok(await s.get('/types/block.hero'));
     assert.equal(await s.get('/users/alice/page'), undefined);
     await assert.rejects(() => s.set(createNode('/types/x', 'x')));
   });
 
   it('getPerm returns cached value after get', async () => {
-    const s = withAcl(store, 'alice', ['u:alice', 'authenticated']);
+    const s = withAcl(tree, 'alice', ['u:alice', 'authenticated']);
     await s.get('/users/alice/page');
     const perm = await s.getPerm('/users/alice/page');
     assert.equal(perm, R | W | A); // owner full access
   });
 
   it('getPerm reflects S bit', async () => {
-    await store.set({ ...createNode('/watchable', 'dir'), $acl: [{ g: 'public', p: R | S }] });
-    await store.set({ ...createNode('/no-watch', 'dir'), $acl: [{ g: 'public', p: R }] });
-    const s = withAcl(store, null, ['public']);
+    await tree.set({ ...createNode('/watchable', 'dir'), $acl: [{ g: 'public', p: R | S }] });
+    await tree.set({ ...createNode('/no-watch', 'dir'), $acl: [{ g: 'public', p: R }] });
+    const s = withAcl(tree, null, ['public']);
     assert.ok((await s.getPerm('/watchable')) & S);
     assert.ok(!((await s.getPerm('/no-watch')) & S));
   });

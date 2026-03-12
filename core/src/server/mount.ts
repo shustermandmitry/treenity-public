@@ -7,7 +7,7 @@ import { type Tree } from '#tree';
 
 // ── Mountable Tree ──
 
-type ResolveResult = { store: Tree; mountPath: string | null; parentStore: Tree };
+type ResolveResult = { tree: Tree; mountPath: string | null; parentStore: Tree };
 
 export function withMounts(rootStore: Tree): Tree {
   const cache = new Map<string, Tree>();
@@ -19,39 +19,39 @@ export function withMounts(rootStore: Tree): Tree {
 
   const self: Tree = {
     async get(path, ctx) {
-      const { store, mountPath, parentStore } = await resolveStore(path, ctx);
-      // Mount node config lives in parent store
+      const { tree, mountPath, parentStore } = await resolveStore(path, ctx);
+      // Mount node config lives in parent tree
       if (mountPath === path) return parentStore.get(path, ctx);
-      return store.get(path, ctx);
+      return tree.get(path, ctx);
     },
 
     async getChildren(path, opts, ctx) {
-      const { store } = await resolveStore(path, ctx);
-      return store.getChildren(path, opts, ctx);
+      const { tree } = await resolveStore(path, ctx);
+      return tree.getChildren(path, opts, ctx);
     },
 
     async set(node, ctx) {
-      const { store, mountPath, parentStore } = await resolveStore(node.$path, ctx);
+      const { tree, mountPath, parentStore } = await resolveStore(node.$path, ctx);
       if (mountPath === node.$path) await parentStore.set(node, ctx);
-      else await store.set(node, ctx);
+      else await tree.set(node, ctx);
       // Invalidate param pattern cache AFTER write (cache may have been populated with stale empty results during resolveStore)
       if (node.$path.includes(':') && isComponent(node['mount'])) paramPatterns.clear();
     },
 
     async remove(path, ctx) {
-      const { store, mountPath, parentStore } = await resolveStore(path, ctx);
+      const { tree, mountPath, parentStore } = await resolveStore(path, ctx);
       if (mountPath === path) {
         // Stop caching this mount
         cache.delete(path);
         return parentStore.remove(path, ctx);
       }
-      return store.remove(path, ctx);
+      return tree.remove(path, ctx);
     },
 
     async patch(path, ops, ctx) {
-      const { store, mountPath, parentStore } = await resolveStore(path, ctx);
+      const { tree, mountPath, parentStore } = await resolveStore(path, ctx);
       if (mountPath === path) await parentStore.patch(path, ops, ctx);
-      else await store.patch(path, ops, ctx);
+      else await tree.patch(path, ops, ctx);
     },
   };
 
@@ -118,7 +118,7 @@ export function withMounts(rootStore: Tree): Tree {
 
   async function resolveStore(path: string, ctx?: any): Promise<ResolveResult> {
     // Walk: /, /seg1, /seg1/seg2, ... — each may be a mount point
-    // Nested mounts: check each level in the current best store
+    // Nested mounts: check each level in the current best tree
     const segments = path.split('/').filter(Boolean);
     const checks = ['/'];
     for (let i = 0; i < segments.length; i++) checks.push('/' + segments.slice(0, i + 1).join('/'));
@@ -128,7 +128,7 @@ export function withMounts(rootStore: Tree): Tree {
     let parentStore = rootStore;
 
     for (const check of checks) {
-      // We need to look for parameterized mounts in the current best store's config nodes if check isn't exactly matching.
+      // We need to look for parameterized mounts in the current best tree's config nodes if check isn't exactly matching.
       // But first, let's keep the existing logic for direct matches
       const cacheKey = ctx?.userId ? `${check}?uid=${ctx.userId}` : check;
       const cached = cache.get(cacheKey);
@@ -190,18 +190,18 @@ export function withMounts(rootStore: Tree): Tree {
           configNode = bindParams(node, matchParams);
       }
 
-      const store = await resolveMount(configNode, bestStore, ctx);
+      const tree = await resolveMount(configNode, bestStore, ctx);
       // Evict oldest entry if cache is full
       if (cache.size >= MAX_MOUNT_CACHE) {
         const first = cache.keys().next().value;
         if (first) cache.delete(first);
       }
-      cache.set(cacheKey, store);
+      cache.set(cacheKey, tree);
       parentStore = bestStore;
-      bestStore = store;
+      bestStore = tree;
       bestMountPath = check;
     }
-    return { store: bestStore, mountPath: bestMountPath, parentStore };
+    return { tree: bestStore, mountPath: bestMountPath, parentStore };
   }
 
   return self;

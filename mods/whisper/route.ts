@@ -76,7 +76,7 @@ export function createWhisperHandler(cfg: WhisperRouteConfig) {
   // Pre-warm the pipeline
   getTranscriber(cfg.model);
 
-  return async (req: IncomingMessage, res: ServerResponse, store: Tree) => {
+  return async (req: IncomingMessage, res: ServerResponse, tree: Tree) => {
     if (req.method !== 'POST') {
       return respond(res, 405, { error: 'Method not allowed' });
     }
@@ -113,8 +113,8 @@ export function createWhisperHandler(cfg: WhisperRouteConfig) {
 
       // Ensure {servicePath}/{id} dir exists
       const idDirPath = `${cfg.nodePath}/${id}`;
-      if (!(await store.get(idDirPath))) {
-        await store.set(createNode(idDirPath, 'whisper.channel', {}, {
+      if (!(await tree.get(idDirPath))) {
+        await tree.set(createNode(idDirPath, 'whisper.channel', {}, {
           checklist: newComp(WhisperChecklist, {}),
         }));
       }
@@ -132,7 +132,7 @@ export function createWhisperHandler(cfg: WhisperRouteConfig) {
           transcribedAt: Date.now(),
         }),
       });
-      await store.set(node);
+      await tree.set(node);
       console.log(`[whisper] ${filename} → ${nodePath} (processing...)`);
 
       // 2. Respond immediately — client sees the node path
@@ -156,7 +156,7 @@ export function createWhisperHandler(cfg: WhisperRouteConfig) {
             ? (outputChunks[outputChunks.length - 1].timestamp[1] ?? 0)
             : 0;
 
-          const updated = await store.get(nodePath);
+          const updated = await tree.get(nodePath);
           if (!updated) return;
           updated.text = newComp(WhisperText, { content: text });
           updated.meta = newComp(WhisperMeta, {
@@ -166,7 +166,7 @@ export function createWhisperHandler(cfg: WhisperRouteConfig) {
             segments: outputChunks?.length ?? 0,
             transcribedAt: Date.now(),
           });
-          await store.set(updated);
+          await tree.set(updated);
           console.log(`[whisper] ${nodePath} done (${outputChunks?.length ?? 0} seg, ${duration}s)`);
         })
         .catch((err) => console.error(`[whisper] ${nodePath} transcription failed:`, err))

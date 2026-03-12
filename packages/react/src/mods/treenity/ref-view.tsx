@@ -1,5 +1,6 @@
 // Ref node/component view — shows target path, resolve button, inline preview
 
+import { Button } from '#components/ui/button';
 import { Render } from '#context';
 import { usePath } from '#hooks';
 import { type NodeData, register } from '@treenity/core';
@@ -45,20 +46,24 @@ function RefDisplay({ target, onSelect }: { target: string; onSelect?: (p: strin
         <span className="text-sm font-mono text-primary">{target}</span>
 
         {onSelect && (
-          <button
-            className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground border border-border"
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-auto px-2 py-0.5 text-xs"
             onClick={() => onSelect(target)}
           >
             Go to
-          </button>
+          </Button>
         )}
 
-        <button
-          className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground border border-border"
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-auto px-2 py-0.5 text-xs"
           onClick={() => setResolved(!resolved)}
         >
           {resolved ? 'Collapse' : 'Resolve'}
-        </button>
+        </Button>
       </div>
 
       {/* Resolved target */}

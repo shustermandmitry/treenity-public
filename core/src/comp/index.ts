@@ -52,7 +52,7 @@ export type TypeProxy<T> = Raw<T> & Actions<T>;
 
 declare module '#core/context' {
   interface ContextHandlers {
-    class: Class<unknown>;
+    class: Class<object>;
   }
 }
 
@@ -71,7 +71,7 @@ import('node:async_hooks')
 
 setCtxProvider(() => _als?.getStore() ?? _ctx);
 
-export type ExecCtx = { node: NodeData; store: Tree; signal: AbortSignal; [k: string]: unknown };
+export type ExecCtx = { node: NodeData; tree: Tree; signal: AbortSignal; [k: string]: unknown };
 
 export function getCtx(): ExecCtx {
   const ctx = _als?.getStore() ?? _ctx;
@@ -86,7 +86,7 @@ export function getCtx(): ExecCtx {
 export type PortDecl = { pre?: string[]; post?: string[] };
 type CompOptions = { needs?: string[]; ports?: Record<string, PortDecl> };
 
-export function registerType<T>(type: string, cls: Class<T>, opts?: CompOptions): TypeClass<T> {
+export function registerType<T extends object>(type: string, cls: Class<T>, opts?: CompOptions): TypeClass<T> {
   const compClass = cls as TypeClass<T>;
   compClass.$type = normalizeType(type);
   // Bracket access in treeChain: proxy[Counter] → Proxy.get(_, "§app.counter")

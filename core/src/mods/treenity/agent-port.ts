@@ -2,8 +2,7 @@
 // Admin creates this node, agent connects with a secret key,
 // admin approves, agent gets scoped access to its subtree.
 
-import { getCtx } from '#comp';
-import { registerType } from '#comp';
+import { getCtx, registerType } from '#comp';
 import { R, S, W } from '#core';
 
 class AgentPort {
@@ -30,7 +29,7 @@ class AgentPort {
     if (this.status !== 'pending') throw new Error('Can only approve pending agents');
     if (!this.pendingKey) throw new Error('No pending key');
 
-    const { store, node } = getCtx();
+    const { tree, node } = getCtx();
     const path = node.$path;
     const agentUserId = `agent:${path}`;
 
@@ -44,8 +43,8 @@ class AgentPort {
     acl.push(agentPerm);
     (this as any).$acl = acl;
 
-    // Create user node with 'agent' group (fire-and-forget, store is outside Immer)
-    store.set({
+    // Create user node with 'agent' group (fire-and-forget, tree is outside Immer)
+    tree.set({
       $path: `/auth/users/${agentUserId}`,
       $type: 'user',
       groups: { $type: 'groups', list: ['agent'] },
@@ -72,7 +71,7 @@ class AgentPort {
   reset() {
     if (this.status === 'idle') throw new Error('Already idle');
 
-    const { store, node } = getCtx();
+    const { tree, node } = getCtx();
     const agentUserId = `agent:${node.$path}`;
 
     this.pendingKey = undefined;
@@ -86,7 +85,7 @@ class AgentPort {
     (this as any).$acl = acl;
 
     // Remove agent user (fire-and-forget)
-    store.remove(`/auth/users/${agentUserId}`);
+    tree.remove(`/auth/users/${agentUserId}`);
   }
 }
 

@@ -11,7 +11,7 @@ import { Bot, type Context } from 'grammy';
 
 export type TgCtx = {
   ctx: Context;
-  store: Tree;
+  tree: Tree;
   node: NodeData;
   params: string;
   [key: string]: unknown;
@@ -41,8 +41,8 @@ function runHandler(middlewares: TgMiddleware[], tgCtx: TgCtx, handler: TgHandle
 
 // ── Start bot from tree ──
 
-export async function startBot(store: Tree, botPath: string, middlewares: TgMiddleware[] = []) {
-  const botNode = await store.get(botPath);
+export async function startBot(tree: Tree, botPath: string, middlewares: TgMiddleware[] = []) {
+  const botNode = await tree.get(botPath);
   if (!botNode) throw new Error(`Bot node not found: ${botPath}`);
 
   const cfgVal = botNode['config'];
@@ -54,7 +54,7 @@ export async function startBot(store: Tree, botPath: string, middlewares: TgMidd
   const onPath = botPath + '/on';
 
   // event handlers from /bot/on/ children
-  const { items: eventNodes } = await store.getChildren(onPath);
+  const { items: eventNodes } = await tree.getChildren(onPath);
   for (const eventNode of eventNodes) {
     const onVal = eventNode['on'];
     if (!isComponent(onVal)) throw new Error(`Event node ${eventNode.$path} missing "on" component`);
@@ -62,19 +62,19 @@ export async function startBot(store: Tree, botPath: string, middlewares: TgMidd
     bot.on(on.filter as Parameters<typeof bot.on>[0], async (ctx) => {
       const handler = resolve(eventNode.$type, 'telegram');
       if (!handler) throw new Error(`No handler for event type "${eventNode.$type}"`);
-      const tgCtx: TgCtx = { ctx, store, node: eventNode, params: '' };
+      const tgCtx: TgCtx = { ctx, tree, node: eventNode, params: '' };
       await runHandler(middlewares, tgCtx, handler);
     });
   }
 
   // commands from /bot/commands/ children
-  const { items: commandNodes } = await store.getChildren(commandsPath);
+  const { items: commandNodes } = await tree.getChildren(commandsPath);
   for (const cmdNode of commandNodes) {
     const cmd = basename(cmdNode.$path);
     bot.command(cmd, async (ctx) => {
       const handler = resolve(cmdNode.$type, 'telegram');
       if (!handler) throw new Error(`No handler for command "${cmd}"`);
-      const tgCtx: TgCtx = { ctx, store, node: cmdNode, params: '' };
+      const tgCtx: TgCtx = { ctx, tree, node: cmdNode, params: '' };
       await runHandler(middlewares, tgCtx, handler);
     });
   }
@@ -86,11 +86,11 @@ export async function startBot(store: Tree, botPath: string, middlewares: TgMidd
     const action = sep === -1 ? raw : raw.slice(0, sep);
     const params = sep === -1 ? '' : raw.slice(sep + 1);
 
-    const targetNode = await store.get(`${commandsPath}/${action}`);
+    const targetNode = await tree.get(`${commandsPath}/${action}`);
     if (!targetNode) return ctx.answerCallbackQuery('Unknown action');
     const handler = resolve(targetNode.$type, 'telegram');
     if (!handler) return ctx.answerCallbackQuery('No handler');
-    const tgCtx: TgCtx = { ctx, store, node: targetNode, params };
+    const tgCtx: TgCtx = { ctx, tree, node: targetNode, params };
     await runHandler(middlewares, tgCtx, handler);
     await ctx.answerCallbackQuery();
   });
@@ -99,11 +99,11 @@ export async function startBot(store: Tree, botPath: string, middlewares: TgMidd
 
   // text fallback
   bot.on('message:text', async (ctx) => {
-    const startNode = await store.get(`${commandsPath}/start`);
+    const startNode = await tree.get(`${commandsPath}/start`);
     if (startNode) {
       const handler = resolve(startNode.$type, 'telegram');
       if (handler) {
-        const tgCtx: TgCtx = { ctx, store, node: startNode, params: '' };
+        const tgCtx: TgCtx = { ctx, tree, node: startNode, params: '' };
         await runHandler(middlewares, tgCtx, handler);
       }
     } else {

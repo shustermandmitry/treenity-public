@@ -323,7 +323,7 @@ register('sim.world', 'action:add-entity', async (ctx: ActionCtx, params: any) =
     components.memory = newComp(SimMemory, { entries: [] });
     components.events = newComp(SimEvents, { entries: [] });
   }
-  await ctx.store.set(createNode(path, type, {}, components));
+  await ctx.tree.set(createNode(path, type, {}, components));
 }, { description: 'Add agent or item to the world', params: 'name, icon, type?, x?, y?, radius?, systemPrompt?, description?' });
 
 // Agent actions (callable by other agents via interact, or by UI)
@@ -376,17 +376,17 @@ register('sim.world', 'service', async (node, ctx) => {
   const wp = node.$path;
 
   async function getAllEntities() {
-    return (await ctx.store.getChildren(wp)).items.filter(
+    return (await ctx.tree.getChildren(wp)).items.filter(
       (n) => n.$type === 'sim.agent' || n.$type === 'sim.item',
     );
   }
 
   async function getAgents() {
-    return (await ctx.store.getChildren(wp)).items.filter((n) => n.$type === 'sim.agent');
+    return (await ctx.tree.getChildren(wp)).items.filter((n) => n.$type === 'sim.agent');
   }
 
   async function runRound() {
-    const world = await ctx.store.get(wp);
+    const world = await ctx.tree.get(wp);
     if (!world) return;
     const cfg = getComponent(world, SimConfig);
     if (!cfg?.running) return;
@@ -399,7 +399,7 @@ register('sim.world', 'service', async (node, ctx) => {
 
     // Phase: thinking
     setComp(world, SimRound, { ...round, phase: 'thinking' });
-    await ctx.store.set(world);
+    await ctx.tree.set(world);
 
     const log = round.log ?? [];
     const model = cfg.model ?? 'claude-haiku-4-5-20251001';
@@ -434,7 +434,7 @@ register('sim.world', 'service', async (node, ctx) => {
 
             // Push event to directed target or all hearers
             for (const hearer of nearAgents) {
-              const fresh = await ctx.store.get(hearer.$path);
+              const fresh = await ctx.tree.get(hearer.$path);
               if (!fresh) continue;
               const hName = eName(fresh);
               const eventType = to && to === hName ? 'speak' : 'hear';
@@ -446,7 +446,7 @@ register('sim.world', 'service', async (node, ctx) => {
                 data: { message: t.message as string },
                 ts,
               });
-              await ctx.store.set(fresh);
+              await ctx.tree.set(fresh);
             }
 
             newEntries.push({
@@ -461,7 +461,7 @@ register('sim.world', 'service', async (node, ctx) => {
             break;
           }
           case 'move': {
-            const fresh = await ctx.store.get(agent.$path);
+            const fresh = await ctx.tree.get(agent.$path);
             if (!fresh) break;
             const pos = getComponent(fresh, SimPosition)!;
             setComp(fresh, SimPosition, {
@@ -469,7 +469,7 @@ register('sim.world', 'service', async (node, ctx) => {
               x: Math.max(0, Math.min(cfg.width, t.x as number)),
               y: Math.max(0, Math.min(cfg.height, t.y as number)),
             });
-            await ctx.store.set(fresh);
+            await ctx.tree.set(fresh);
             newEntries.push({
               round: num,
               agent: agentName,
@@ -481,13 +481,13 @@ register('sim.world', 'service', async (node, ctx) => {
             break;
           }
           case 'remember': {
-            const fresh = await ctx.store.get(agent.$path);
+            const fresh = await ctx.tree.get(agent.$path);
             if (!fresh) break;
             const mem = getComponent(fresh, SimMemory);
             setComp(fresh, SimMemory, {
               entries: [...(mem?.entries ?? []), t.text as string].slice(-20),
             });
-            await ctx.store.set(fresh);
+            await ctx.tree.set(fresh);
             break;
           }
           case 'interact': {
@@ -497,7 +497,7 @@ register('sim.world', 'service', async (node, ctx) => {
             const targetPath = nameToPath.get(targetName);
             if (!targetPath) break;
 
-            const targetNode = await ctx.store.get(targetPath);
+            const targetNode = await ctx.tree.get(targetPath);
             if (!targetNode) break;
 
             // Check proximity
@@ -510,17 +510,17 @@ register('sim.world', 'service', async (node, ctx) => {
 
             const actx: ActionCtx = {
               node: targetNode,
-              store: ctx.store,
+              tree: ctx.tree,
               signal: AbortSignal.timeout(5000),
-              nc: serverNodeHandle(ctx.store),
+              nc: serverNodeHandle(ctx.tree),
             };
             const result = await (handler as any)(actx, data);
-            // Persist handler mutations (handlers don't call store.set — executeAction/caller does)
-            await ctx.store.set(targetNode);
+            // Persist handler mutations (handlers don't call tree.set — executeAction/caller does)
+            await ctx.tree.set(targetNode);
 
             // Push event to target agent's inbox
             if (targetNode.$type === 'sim.agent') {
-              const freshTarget = await ctx.store.get(targetPath);
+              const freshTarget = await ctx.tree.get(targetPath);
               if (freshTarget) {
                 pushAgentEvent(freshTarget, {
                   round: num,
@@ -529,7 +529,7 @@ register('sim.world', 'service', async (node, ctx) => {
                   data: { ...data, result },
                   ts,
                 });
-                await ctx.store.set(freshTarget);
+                await ctx.tree.set(freshTarget);
               }
             }
 
@@ -552,18 +552,18 @@ register('sim.world', 'service', async (node, ctx) => {
     for (const a of freshEntities) {
       const near = getNearby(a, freshEntities);
       setComp(a, SimNearby, { agents: near.map(eName) });
-      await ctx.store.set(a);
+      await ctx.tree.set(a);
     }
 
     // Advance round
-    const worldFresh = await ctx.store.get(wp);
+    const worldFresh = await ctx.tree.get(wp);
     if (!worldFresh) return;
     setComp(worldFresh, SimRound, {
       current: num + 1,
       phase: 'idle',
       log: [...log, ...newEntries].slice(-50),
     });
-    await ctx.store.set(worldFresh);
+    await ctx.tree.set(worldFresh);
     console.log(`[sim] round ${num} done: ${newEntries.length} events`);
   }
 
@@ -572,7 +572,7 @@ register('sim.world', 'service', async (node, ctx) => {
     console.log(`[sim] started on ${wp}`);
     while (!stopped) {
       try {
-        const w = await ctx.store.get(wp);
+        const w = await ctx.tree.get(wp);
         const cfg = w ? getComponent(w, SimConfig) : null;
         if (cfg?.running) await runRound();
         await new Promise((r) => setTimeout(r, cfg?.roundDelay ?? 5000));

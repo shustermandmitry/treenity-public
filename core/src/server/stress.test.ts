@@ -25,8 +25,8 @@ function fullPipeline() {
   const volatile = withVolatile(mountable);
   const validated = withValidation(volatile);
   const watcher = createWatchManager();
-  const store = withSubscriptions(validated, (e) => watcher.notify(e));
-  return { bootstrap, mountable, store, watcher };
+  const tree = withSubscriptions(validated, (e) => watcher.notify(e));
+  return { bootstrap, mountable, tree, watcher };
 }
 
 function timer() {
@@ -55,16 +55,16 @@ async function timeBatch(label: string, ops: number, fn: (i: number) => Promise<
 // ── 1. Raw Throughput ──
 
 describe('Stress: throughput', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('set throughput — 2k nodes', async () => {
     const { rate } = await timeBatch('set', 2_000, (i) =>
-      store.set(createNode(`/bench/n${i}`, 'item', { value: i })),
+      tree.set(createNode(`/bench/n${i}`, 'item', { value: i })),
     500);
     assert.ok(rate > 100, `Expected > 100 ops/s, got ${rate}`);
   });
@@ -72,10 +72,10 @@ describe('Stress: throughput', () => {
   it('get throughput — 5k reads', async () => {
     console.log('    seeding 500 nodes...');
     for (let i = 0; i < 500; i++)
-      await store.set(createNode(`/bench/n${i}`, 'item', { value: i }));
+      await tree.set(createNode(`/bench/n${i}`, 'item', { value: i }));
 
     const { rate } = await timeBatch('get', 5_000, (i) =>
-      store.get(`/bench/n${i % 500}`) as Promise<any>,
+      tree.get(`/bench/n${i % 500}`) as Promise<any>,
     1000);
     assert.ok(rate > 3000, `Expected > 3000 ops/s, got ${rate}`);
   });
@@ -83,10 +83,10 @@ describe('Stress: throughput', () => {
   it('getChildren throughput — 500 queries over 200 children', async () => {
     console.log('    seeding 200 children...');
     for (let i = 0; i < 200; i++)
-      await store.set(createNode(`/list/c${i}`, 'item', { value: i }));
+      await tree.set(createNode(`/list/c${i}`, 'item', { value: i }));
 
     const { rate } = await timeBatch('getChildren', 500, () =>
-      store.getChildren('/list', { limit: 50 }) as Promise<any>,
+      tree.getChildren('/list', { limit: 50 }) as Promise<any>,
     100);
     assert.ok(rate > 200, `Expected > 200 ops/s, got ${rate}`);
   });
@@ -94,15 +94,15 @@ describe('Stress: throughput', () => {
   it('mixed read/write — 2k random ops', async () => {
     console.log('    seeding 100 nodes...');
     for (let i = 0; i < 100; i++)
-      await store.set(createNode(`/mixed/n${i}`, 'item', { value: i }));
+      await tree.set(createNode(`/mixed/n${i}`, 'item', { value: i }));
 
     let reads = 0, writes = 0;
     const { rate } = await timeBatch('mixed r/w', 2_000, async (i) => {
       if (Math.random() < 0.7) {
-        await store.get(`/mixed/n${i % 100}`);
+        await tree.get(`/mixed/n${i % 100}`);
         reads++;
       } else {
-        await store.set(createNode(`/mixed/n${i % 100}`, 'item', { value: i }));
+        await tree.set(createNode(`/mixed/n${i % 100}`, 'item', { value: i }));
         writes++;
       }
     }, 500);
@@ -114,26 +114,26 @@ describe('Stress: throughput', () => {
 // ── 2. Concurrent Writes + OCC ──
 
 describe('Stress: OCC race conditions', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('concurrent writes to same node — exactly one wins per round', async () => {
-    await store.set(createNode('/race/target', 'counter', { count: 0 }));
+    await tree.set(createNode('/race/target', 'counter', { count: 0 }));
 
     let conflicts = 0;
     let successes = 0;
     const rounds = 100;
 
     for (let round = 0; round < rounds; round++) {
-      const node = (await store.get('/race/target'))!;
+      const node = (await tree.get('/race/target'))!;
       const writers = 5;
       const results = await Promise.allSettled(
         Array.from({ length: writers }, (_, w) =>
-          store.set({ ...node, count: (node as any).count + 1, writer: w } as NodeData),
+          tree.set({ ...node, count: (node as any).count + 1, writer: w } as NodeData),
         ),
       );
 
@@ -147,12 +147,12 @@ describe('Stress: OCC race conditions', () => {
     }
 
     console.log(`  ✓ [OCC] ${rounds} rounds: ${successes} wins, ${conflicts} conflicts`);
-    const final = (await store.get('/race/target')) as any;
+    const final = (await tree.get('/race/target')) as any;
     assert.equal(final.$rev, rounds + 1);
   });
 
   it('interleaved read-modify-write with retry', async () => {
-    await store.set(createNode('/race/counter', 'counter', { count: 0 }));
+    await tree.set(createNode('/race/counter', 'counter', { count: 0 }));
 
     const workers = 10;
     const incrementsPerWorker = 30;
@@ -162,9 +162,9 @@ describe('Stress: OCC race conditions', () => {
       for (let i = 0; i < incrementsPerWorker; i++) {
         let done = false;
         while (!done) {
-          const node = (await store.get('/race/counter'))!;
+          const node = (await tree.get('/race/counter'))!;
           try {
-            await store.set({ ...node, count: (node as any).count + 1 } as NodeData);
+            await tree.set({ ...node, count: (node as any).count + 1 } as NodeData);
             done = true;
           } catch {
             retries++;
@@ -178,7 +178,7 @@ describe('Stress: OCC race conditions', () => {
     const results = await Promise.all(Array.from({ length: workers }, (_, i) => worker(i)));
     const totalRetries = results.reduce((a, b) => a + b, 0);
 
-    const final = (await store.get('/race/counter')) as any;
+    const final = (await tree.get('/race/counter')) as any;
     console.log(`  ✓ [retry] final count=${final.count}, retries=${totalRetries}`);
     assert.equal(final.count, workers * incrementsPerWorker);
   });
@@ -187,19 +187,19 @@ describe('Stress: OCC race conditions', () => {
 // ── 3. Subscription Flooding ──
 
 describe('Stress: subscriptions', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('500 rapid writes — all events delivered in order', async () => {
     const events: NodeEvent[] = [];
-    store.subscribe('/flood', (e) => events.push(e), { children: true });
+    tree.subscribe('/flood', (e) => events.push(e), { children: true });
 
     await timeBatch('sub flood', 500, (i) =>
-      store.set(createNode(`/flood/n${i}`, 'item', { seq: i })),
+      tree.set(createNode(`/flood/n${i}`, 'item', { seq: i })),
     100);
 
     assert.equal(events.length, 500);
@@ -216,12 +216,12 @@ describe('Stress: subscriptions', () => {
     for (let s = 0; s < subs; s++) {
       const events: NodeEvent[] = [];
       buckets.push(events);
-      store.subscribe('/multi', (e) => events.push(e), { children: true });
+      tree.subscribe('/multi', (e) => events.push(e), { children: true });
     }
     console.log(`    ${subs} subscribers, ${N} writes...`);
 
     for (let i = 0; i < N; i++)
-      await store.set(createNode(`/multi/n${i}`, 'item'));
+      await tree.set(createNode(`/multi/n${i}`, 'item'));
 
     for (let s = 0; s < subs; s++) {
       assert.equal(buckets[s].length, N, `Subscriber ${s} missed events`);
@@ -233,11 +233,11 @@ describe('Stress: subscriptions', () => {
     const rootEvents: NodeEvent[] = [];
     const childEvents: NodeEvent[] = [];
 
-    store.subscribe('/', (e) => rootEvents.push(e), { children: true });
-    store.subscribe('/deep/path', (e) => childEvents.push(e), { children: true });
+    tree.subscribe('/', (e) => rootEvents.push(e), { children: true });
+    tree.subscribe('/deep/path', (e) => childEvents.push(e), { children: true });
 
-    await store.set(createNode('/deep/path/to/node', 'item'));
-    await store.set(createNode('/other/place', 'item'));
+    await tree.set(createNode('/deep/path/to/node', 'item'));
+    await tree.set(createNode('/other/place', 'item'));
 
     assert.equal(rootEvents.length, 2, 'Root should catch all');
     assert.equal(childEvents.length, 1, 'Child sub should only catch nested');
@@ -247,13 +247,13 @@ describe('Stress: subscriptions', () => {
 
   it('subscribe + unsubscribe — no leaks', async () => {
     const events: NodeEvent[] = [];
-    const unsub = store.subscribe('/leak', (e) => events.push(e), { children: true });
+    const unsub = tree.subscribe('/leak', (e) => events.push(e), { children: true });
 
-    await store.set(createNode('/leak/before', 'item'));
+    await tree.set(createNode('/leak/before', 'item'));
     assert.equal(events.length, 1);
 
     unsub();
-    await store.set(createNode('/leak/after', 'item'));
+    await tree.set(createNode('/leak/after', 'item'));
     assert.equal(events.length, 1, 'Should not receive events after unsub');
     console.log('  ✓ no events after unsubscribe');
   });
@@ -262,12 +262,12 @@ describe('Stress: subscriptions', () => {
 // ── 4. WatchManager Fan-out ──
 
 describe('Stress: watch fan-out', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
   let watcher: WatchManager;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store, watcher } = fullPipeline());
+    ({ tree, watcher } = fullPipeline());
   });
 
   it('100 users watching same path — all notified', async () => {
@@ -282,7 +282,7 @@ describe('Stress: watch fan-out', () => {
     }
     console.log('    100 users connected, writing...');
 
-    await store.set(createNode('/shared/doc', 'doc', { text: 'hello' }));
+    await tree.set(createNode('/shared/doc', 'doc', { text: 'hello' }));
 
     let ok = 0;
     for (const [, events] of received) {
@@ -298,7 +298,7 @@ describe('Stress: watch fan-out', () => {
     watcher.watch('watcher', ['/items'], { children: true });
 
     for (let i = 0; i < 50; i++)
-      await store.set(createNode(`/items/item-${i}`, 'item'));
+      await tree.set(createNode(`/items/item-${i}`, 'item'));
 
     assert.equal(events.length, 50);
     console.log('  ✓ 50/50 child events received');
@@ -309,11 +309,11 @@ describe('Stress: watch fan-out', () => {
     watcher.connect('auto', 'auto', (e) => events.push(e));
     watcher.watch('auto', ['/auto'], { children: true, autoWatch: true });
 
-    await store.set(createNode('/auto/target', 'item', { v: 1 }));
+    await tree.set(createNode('/auto/target', 'item', { v: 1 }));
     assert.equal(events.length, 1);
 
-    const node = (await store.get('/auto/target'))!;
-    await store.set({ ...node, v: 2 } as NodeData);
+    const node = (await tree.get('/auto/target'))!;
+    await tree.set({ ...node, v: 2 } as NodeData);
     assert.equal(events.length, 2);
     console.log('  ✓ autoWatch promoted prefix → exact watch');
   });
@@ -323,11 +323,11 @@ describe('Stress: watch fan-out', () => {
     watcher.connect('ephemeral', 'ephemeral', (e) => events.push(e));
     watcher.watch('ephemeral', ['/bye/node']);
 
-    await store.set(createNode('/bye/node', 'item'));
+    await tree.set(createNode('/bye/node', 'item'));
     assert.equal(events.length, 1);
 
     watcher.disconnect('ephemeral');
-    await store.set(createNode('/bye/node', 'item', { v: 2 }));
+    await tree.set(createNode('/bye/node', 'item', { v: 2 }));
     assert.equal(events.length, 1, 'Disconnected user should not receive events');
     console.log('  ✓ disconnect stops delivery');
   });
@@ -337,7 +337,7 @@ describe('Stress: watch fan-out', () => {
 
 describe('Stress: query mounts + CDC', () => {
   let bootstrap: Tree;
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
   let watcher: WatchManager;
 
   beforeEach(() => {
@@ -346,7 +346,7 @@ describe('Stress: query mounts + CDC', () => {
       const query = config['query'] as unknown as { source: string; match: Record<string, unknown> };
       return createQueryTree({ source: query.source, match: query.match }, parentStore);
     });
-    ({ bootstrap, store, watcher } = fullPipeline());
+    ({ bootstrap, tree, watcher } = fullPipeline());
   });
 
   it('query mount filters correctly under load', async () => {
@@ -359,7 +359,7 @@ describe('Stress: query mounts + CDC', () => {
 
     console.log('    creating 200 tasks (half active)...');
     for (let i = 0; i < 200; i++) {
-      await store.set(
+      await tree.set(
         createNode(`/entities/tasks/t${i}`, 'task', {
           status: i % 2 === 0 ? 'active' : 'done',
           title: `Task ${i}`,
@@ -367,7 +367,7 @@ describe('Stress: query mounts + CDC', () => {
       );
     }
 
-    const result = await store.getChildren('/views/active');
+    const result = await tree.getChildren('/views/active');
     assert.equal(result.items.length, 100);
 
     for (const item of result.items) {
@@ -390,19 +390,19 @@ describe('Stress: query mounts + CDC', () => {
     watcher.watch('user1', ['/views/urgent'], { children: true });
 
     // Low priority — no CDC
-    await store.set(createNode('/entities/tickets/t1', 'ticket', { priority: 'low' }));
+    await tree.set(createNode('/entities/tickets/t1', 'ticket', { priority: 'low' }));
     assert.equal(events.length, 0, 'Low priority should not trigger CDC');
     console.log('    low-priority → no event ✓');
 
     // High priority — enters VP
-    await store.set(createNode('/entities/tickets/t2', 'ticket', { priority: 'high' }));
+    await tree.set(createNode('/entities/tickets/t2', 'ticket', { priority: 'high' }));
     assert.equal(events.length, 1);
     assert.deepEqual((events[0] as any).addVps, ['/views/urgent']);
     console.log('    high-priority → addVps ✓');
 
     // Downgrade — leaves VP
-    const t2 = (await store.get('/entities/tickets/t2'))!;
-    await store.set({ ...t2, priority: 'low' } as NodeData);
+    const t2 = (await tree.get('/entities/tickets/t2'))!;
+    await tree.set({ ...t2, priority: 'low' } as NodeData);
     assert.equal(events.length, 2);
     assert.deepEqual((events[1] as any).rmVps, ['/views/urgent']);
     console.log('    downgrade → rmVps ✓');
@@ -430,21 +430,21 @@ describe('Stress: query mounts + CDC', () => {
 
     console.log('    creating 100 "new" orders...');
     for (let i = 0; i < 100; i++)
-      await store.set(createNode(`/entities/orders/o${i}`, 'order', { status: 'new' }));
+      await tree.set(createNode(`/entities/orders/o${i}`, 'order', { status: 'new' }));
 
     assert.equal(adds.length, 100);
     console.log(`    ${adds.length} addVps events ✓`);
 
     console.log('    transitioning 50 to "done"...');
     for (let i = 0; i < 50; i++) {
-      const order = (await store.get(`/entities/orders/o${i}`))!;
-      await store.set({ ...order, status: 'done' } as NodeData);
+      const order = (await tree.get(`/entities/orders/o${i}`))!;
+      await tree.set({ ...order, status: 'done' } as NodeData);
     }
 
     assert.equal(removes.length, 50);
     console.log(`    ${removes.length} rmVps events ✓`);
 
-    const result = await store.getChildren('/views/new');
+    const result = await tree.getChildren('/views/new');
     assert.equal(result.items.length, 50);
     console.log(`  ✓ query mount shows ${result.items.length} remaining`);
 
@@ -472,7 +472,7 @@ describe('Stress: query mounts + CDC', () => {
     watcher.connect('u1', 'u1', (e) => events.push(e));
     watcher.watch('u1', ['/views/new', '/views/flagged'], { children: true });
 
-    await store.set(createNode('/entities/items/x', 'item', { status: 'new', flagged: true }));
+    await tree.set(createNode('/entities/items/x', 'item', { status: 'new', flagged: true }));
     assert.equal(events.length, 1, 'Single event despite matching two queries');
     assert.deepEqual((events[0] as any).addVps?.sort(), ['/views/flagged', '/views/new']);
     console.log('  ✓ single event with both VPs');
@@ -484,7 +484,7 @@ describe('Stress: query mounts + CDC', () => {
 // ── 6. Action Execute + Patch Pipeline ──
 
 describe('Stress: actions + patches', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
@@ -499,22 +499,22 @@ describe('Stress: actions + patches', () => {
       return ctx.node.count;
     });
 
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('execute generates patches — 50 increments', async () => {
-    await store.set(createNode('/counters/c1', 'counter', { count: 0 }));
+    await tree.set(createNode('/counters/c1', 'counter', { count: 0 }));
 
     const patchEvents: NodeEvent[] = [];
-    store.subscribe('/counters', (e) => {
+    tree.subscribe('/counters', (e) => {
       if (e.type === 'patch') patchEvents.push(e);
     }, { children: true });
 
     await timeBatch('execute', 50, () =>
-      executeAction(store, '/counters/c1', undefined, undefined, 'increment') as Promise<any>,
+      executeAction(tree, '/counters/c1', undefined, undefined, 'increment') as Promise<any>,
     10);
 
-    const final = (await store.get('/counters/c1')) as any;
+    const final = (await tree.get('/counters/c1')) as any;
     assert.equal(final.count, 50);
     assert.equal(patchEvents.length, 50);
 
@@ -527,22 +527,22 @@ describe('Stress: actions + patches', () => {
   });
 
   it('concurrent execute — OCC serializes correctly', async () => {
-    await store.set(createNode('/counters/race', 'counter', { count: 0 }));
+    await tree.set(createNode('/counters/race', 'counter', { count: 0 }));
 
     const N = 30;
     let conflicts = 0;
 
     for (let i = 0; i < N; i++) {
       const results = await Promise.allSettled([
-        executeAction(store, '/counters/race', undefined, undefined, 'increment'),
-        executeAction(store, '/counters/race', undefined, undefined, 'increment'),
-        executeAction(store, '/counters/race', undefined, undefined, 'increment'),
+        executeAction(tree, '/counters/race', undefined, undefined, 'increment'),
+        executeAction(tree, '/counters/race', undefined, undefined, 'increment'),
+        executeAction(tree, '/counters/race', undefined, undefined, 'increment'),
       ]);
       conflicts += results.filter((r) => r.status === 'rejected').length;
       if ((i + 1) % 10 === 0) console.log(`    batch ${i + 1}/${N}...`);
     }
 
-    const final = (await store.get('/counters/race')) as any;
+    const final = (await tree.get('/counters/race')) as any;
     console.log(`  ✓ [execute race] final count=${final.count}, conflicts=${conflicts}`);
     assert.ok(final.count >= N);
     assert.ok(final.count <= 3 * N);
@@ -552,21 +552,21 @@ describe('Stress: actions + patches', () => {
 // ── 7. Deep Tree ──
 
 describe('Stress: deep trees', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('deeply nested path — 50 levels deep', async () => {
     let path = '';
     for (let i = 0; i < 50; i++) {
       path += `/d${i}`;
-      await store.set(createNode(path, 'dir'));
+      await tree.set(createNode(path, 'dir'));
     }
 
-    const deep = await store.get(path);
+    const deep = await tree.get(path);
     assert.ok(deep);
     assert.equal(deep!.$type, 't.dir');
     console.log(`  ✓ read node at depth 50: ${path.slice(0, 40)}...`);
@@ -574,7 +574,7 @@ describe('Stress: deep trees', () => {
     let current = '';
     for (let i = 0; i < 49; i++) {
       current += `/d${i}`;
-      const children = await store.getChildren(current, { limit: 10 });
+      const children = await tree.getChildren(current, { limit: 10 });
       assert.equal(children.items.length, 1);
     }
     console.log('  ✓ getChildren works at every level');
@@ -583,16 +583,16 @@ describe('Stress: deep trees', () => {
   it('wide tree — 1000 children + pagination', async () => {
     console.log('    creating 1000 children...');
     for (let i = 0; i < 1000; i++)
-      await store.set(createNode(`/wide/c${i}`, 'item', { idx: i }));
+      await tree.set(createNode(`/wide/c${i}`, 'item', { idx: i }));
 
-    const all = await store.getChildren('/wide');
+    const all = await tree.getChildren('/wide');
     assert.equal(all.total, 1000);
     console.log(`    total=${all.total} ✓`);
 
-    const page1 = await store.getChildren('/wide', { limit: 100, offset: 0 });
+    const page1 = await tree.getChildren('/wide', { limit: 100, offset: 0 });
     assert.equal(page1.items.length, 100);
 
-    const page10 = await store.getChildren('/wide', { limit: 100, offset: 900 });
+    const page10 = await tree.getChildren('/wide', { limit: 100, offset: 900 });
     assert.equal(page10.items.length, 100);
     console.log('  ✓ pagination correct');
   });
@@ -601,18 +601,18 @@ describe('Stress: deep trees', () => {
 // ── 8. Remove + Subscription Correctness ──
 
 describe('Stress: remove operations', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('bulk create then remove — subscriptions fire for both', async () => {
     const sets: string[] = [];
     const removes: string[] = [];
 
-    store.subscribe('/tmp', (e) => {
+    tree.subscribe('/tmp', (e) => {
       if (e.type === 'set') sets.push(e.path);
       if (e.type === 'remove') removes.push(e.path);
     }, { children: true });
@@ -620,24 +620,24 @@ describe('Stress: remove operations', () => {
     const N = 200;
     console.log(`    creating ${N} nodes...`);
     for (let i = 0; i < N; i++)
-      await store.set(createNode(`/tmp/n${i}`, 'item'));
+      await tree.set(createNode(`/tmp/n${i}`, 'item'));
     assert.equal(sets.length, N);
 
     console.log(`    removing ${N} nodes...`);
     for (let i = 0; i < N; i++)
-      await store.remove(`/tmp/n${i}`);
+      await tree.remove(`/tmp/n${i}`);
     assert.equal(removes.length, N);
 
-    const children = await store.getChildren('/tmp');
+    const children = await tree.getChildren('/tmp');
     assert.equal(children.items.length, 0);
     console.log(`  ✓ ${N} set + ${N} remove events, 0 remaining`);
   });
 
   it('remove non-existent node — no event', async () => {
     const events: NodeEvent[] = [];
-    store.subscribe('/phantom', (e) => events.push(e));
+    tree.subscribe('/phantom', (e) => events.push(e));
 
-    const result = await store.remove('/phantom/ghost');
+    const result = await tree.remove('/phantom/ghost');
     assert.equal(result, false);
     assert.equal(events.length, 0);
     console.log('  ✓ no event for phantom remove');
@@ -647,7 +647,7 @@ describe('Stress: remove operations', () => {
 // ── 9. Volatile + Validation Pipeline ──
 
 describe('Stress: volatile + validation', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
@@ -658,15 +658,15 @@ describe('Stress: volatile + validation', () => {
         count: { type: 'number' },
       },
     }));
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('volatile nodes stored in memory layer', async () => {
     for (let i = 0; i < 50; i++)
-      await store.set(createNode(`/live/s${i}`, 'ephemeral', { value: i }));
+      await tree.set(createNode(`/live/s${i}`, 'ephemeral', { value: i }));
 
     for (let i = 0; i < 50; i++) {
-      const node = await store.get(`/live/s${i}`);
+      const node = await tree.get(`/live/s${i}`);
       assert.ok(node);
       assert.equal((node as any).value, i);
     }
@@ -679,7 +679,7 @@ describe('Stress: volatile + validation', () => {
     for (let i = 0; i < 50; i++) {
       const bad = i % 2 !== 0;
       try {
-        await store.set(
+        await tree.set(
           createNode(`/valid/n${i}`, 'item', {}, {
             data: {
               $type: 'validated',
@@ -703,11 +703,11 @@ describe('Stress: volatile + validation', () => {
 // ── 10. Random Access Pattern ──
 
 describe('Stress: random access', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('random CRUD — 1000 ops, no crashes', async () => {
@@ -720,18 +720,18 @@ describe('Stress: random access', () => {
       const path = `/random/n${id}`;
 
       if (op < 0.3) {
-        await store.set(createNode(path, 'item', { i, rnd: Math.random() }));
+        await tree.set(createNode(path, 'item', { i, rnd: Math.random() }));
         paths.add(path);
         creates++;
       } else if (op < 0.6) {
-        await store.get(path);
+        await tree.get(path);
         reads++;
       } else if (op < 0.8) {
-        await store.set(createNode(path, 'item', { i, updated: true }));
+        await tree.set(createNode(path, 'item', { i, updated: true }));
         paths.add(path);
         updates++;
       } else {
-        await store.remove(path);
+        await tree.remove(path);
         paths.delete(path);
         deletes++;
       }
@@ -741,7 +741,7 @@ describe('Stress: random access', () => {
     assert.ok(reads > 0, 'should have reads');
 
     for (const path of paths) {
-      const node = await store.get(path);
+      const node = await tree.get(path);
       if (node) {
         assert.equal(node.$path, path);
         assert.equal(node.$type, 't.item');
@@ -763,7 +763,7 @@ describe('Stress: full watch pipeline', () => {
       return createQueryTree({ source: query.source, match: query.match }, parentStore);
     });
 
-    const { bootstrap: bs2, store: store2, watcher: w2 } = fullPipeline();
+    const { bootstrap: bs2, tree: store2, watcher: w2 } = fullPipeline();
 
     await bs2.set(
       createNode('/views/hot', 'folder', {}, {
@@ -808,11 +808,11 @@ describe('Stress: full watch pipeline', () => {
 // ── 12. Memory Pressure (reduced) ──
 
 describe('Stress: memory', () => {
-  let store: ReactiveTree;
+  let tree: ReactiveTree;
 
   beforeEach(() => {
     clearRegistry();
-    ({ store } = fullPipeline());
+    ({ tree } = fullPipeline());
   });
 
   it('5k nodes — memory stays bounded', async () => {
@@ -820,7 +820,7 @@ describe('Stress: memory', () => {
     const N = 5_000;
 
     await timeBatch('mem fill', N, (i) =>
-      store.set(createNode(`/mem/n${i}`, 'item', { data: `payload-${i}`, idx: i })),
+      tree.set(createNode(`/mem/n${i}`, 'item', { data: `payload-${i}`, idx: i })),
     1000);
 
     const after = process.memoryUsage().heapUsed;
@@ -835,7 +835,7 @@ describe('Stress: memory', () => {
     // Spot-check random reads
     for (let i = 0; i < 50; i++) {
       const idx = Math.floor(Math.random() * N);
-      const node = await store.get(`/mem/n${idx}`);
+      const node = await tree.get(`/mem/n${idx}`);
       assert.ok(node);
       assert.equal((node as any).idx, idx);
     }

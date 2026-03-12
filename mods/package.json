@@ -1,0 +1,75 @@
+{
+  "name": "@treenity/mods",
+  "version": "3.0.1",
+  "description": "Official Treenity modules — board, sim, cafe, doc, mindmap, and more.",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "AGPL-3.0",
+  "author": "Treenity <hello@treenity.ai> (https://treenity.ai)",
+  "homepage": "https://github.com/treenity-ai/treenity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treenity-ai/treenity.git",
+    "directory": "mods"
+  },
+  "keywords": [
+    "treenity",
+    "mods",
+    "modules",
+    "ecs",
+    "composable",
+    "ai-native"
+  ],
+  "exports": {
+    "./*": {
+      "development": [
+        "./*.ts",
+        "./*.tsx"
+      ],
+      "types": [
+        "./dist/*.d.ts"
+      ],
+      "default": [
+        "./dist/*.js"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "board",
+    "brahman",
+    "cafe",
+    "canary",
+    "doc",
+    "launcher",
+    "mindmap",
+    "sensor-demo",
+    "sensor-generator",
+    "sim",
+    "table",
+    "tasks",
+    "three",
+    "todo",
+    "whisper",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@treenity/core": "^3.0.0",
+    "@treenity/react": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@treenity/react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

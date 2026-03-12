@@ -24,9 +24,9 @@ describe('RawFsStore', () => {
   }
 
   it('file → typed node', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'photo.jpg'), 'fake-jpeg');
-    const node = await store.get('/photo.jpg');
+    const node = await tree.get('/photo.jpg');
 
     assert.equal(node?.$path, '/photo.jpg');
     assert.equal(node?.$type, 'image/jpeg');
@@ -34,26 +34,26 @@ describe('RawFsStore', () => {
   });
 
   it('directory → dir node', async () => {
-    const store = await setup();
+    const tree = await setup();
     await mkdir(join(dir, 'albums'));
-    const node = await store.get('/albums');
+    const node = await tree.get('/albums');
 
     assert.equal(node?.$path, '/albums');
     assert.equal(node?.$type, 'dir');
   });
 
   it('missing path → undefined', async () => {
-    const store = await setup();
-    assert.equal(await store.get('/nope'), undefined);
+    const tree = await setup();
+    assert.equal(await tree.get('/nope'), undefined);
   });
 
   it('getChildren lists typed entries', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'a.txt'), 'text');
     await writeFile(join(dir, 'b.csv'), 'col1,col2');
     await mkdir(join(dir, 'sub'));
 
-    const { items } = await store.getChildren('/');
+    const { items } = await tree.getChildren('/');
     assert.equal(items.length, 3);
 
     const byPath = Object.fromEntries(items.map(n => [n.$path, n.$type]));
@@ -63,30 +63,30 @@ describe('RawFsStore', () => {
   });
 
   it('getChildren respects depth', async () => {
-    const store = await setup();
+    const tree = await setup();
     await mkdir(join(dir, 'a'));
     await writeFile(join(dir, 'a', 'deep.md'), '# hello');
 
-    const d1 = await store.getChildren('/', { depth: 1 });
+    const d1 = await tree.getChildren('/', { depth: 1 });
     assert.equal(d1.items.length, 1);
     assert.equal(d1.items[0].$type, 'dir');
 
-    const d2 = await store.getChildren('/', { depth: 2 });
+    const d2 = await tree.getChildren('/', { depth: 2 });
     assert.equal(d2.items.length, 2);
   });
 
   it('skips hidden files', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, '.hidden'), 'secret');
     await writeFile(join(dir, 'visible.txt'), 'hi');
 
-    const { items } = await store.getChildren('/');
+    const { items } = await tree.getChildren('/');
     assert.equal(items.length, 1);
     assert.equal(items[0].$path, '/visible.txt');
   });
 
   it('mime type detection', async () => {
-    const store = await setup();
+    const tree = await setup();
     const cases: [string, string][] = [
       ['doc.pdf', 'application/pdf'],
       ['style.css', 'text/css'],
@@ -101,15 +101,15 @@ describe('RawFsStore', () => {
     for (const [name, expectedType] of cases) {
       const content = name.endsWith('.json') ? '{}' : 'data';
       await writeFile(join(dir, name), content);
-      const node = await store.get('/' + name);
+      const node = await tree.get('/' + name);
       assert.equal(node?.$type, expectedType, `${name} should be ${expectedType}`);
     }
   });
 
   it('json file → parsed object, no meta', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'config.json'), JSON.stringify({ name: 'test', count: 42 }));
-    const node = await store.get('/config.json');
+    const node = await tree.get('/config.json');
 
     assert.equal(node?.$path, '/config.json');
     assert.equal(node?.$type, 'application/json');
@@ -119,16 +119,16 @@ describe('RawFsStore', () => {
   });
 
   it('json file preserves $type from content', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'typed.json'), JSON.stringify({ $type: 'my.custom', foo: 'bar' }));
-    const node = await store.get('/typed.json');
+    const node = await tree.get('/typed.json');
 
     assert.equal(node?.$type, 'my.custom');
     assert.equal((node as any).foo, 'bar');
   });
 
   it('custom decode enriches node', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'data.csv'), 'name,age\nalice,30\nbob,25');
 
     register('text/csv', 'decode', async (filePath: string, nodePath: string) => {
@@ -143,7 +143,7 @@ describe('RawFsStore', () => {
       } as any;
     });
 
-    const node = await store.get('/data.csv');
+    const node = await tree.get('/data.csv');
     assert.equal(node?.$type, 'text/csv');
     assert.deepEqual((node as any).columns, ['name', 'age']);
     assert.equal((node as any).rowCount, 2);
@@ -153,13 +153,13 @@ describe('RawFsStore', () => {
   // --- Encode tests ---
 
   it('set() with registered encode writes file', async () => {
-    const store = await setup();
+    const tree = await setup();
 
     register('text/plain', 'encode', async (node: NodeData, filePath: string) => {
       await writeFile(filePath, (node as any).content ?? '');
     });
 
-    await store.set({ $path: '/hello.txt', $type: 'text/plain', content: 'world' } as any);
+    await tree.set({ $path: '/hello.txt', $type: 'text/plain', content: 'world' } as any);
 
     const raw = await readFile(join(dir, 'hello.txt'), 'utf-8');
     assert.equal(raw, 'world');
@@ -167,20 +167,20 @@ describe('RawFsStore', () => {
   });
 
   it('set() without encode throws', async () => {
-    const store = await setup();
+    const tree = await setup();
     await assert.rejects(
-      () => store.set({ $path: '/x.bin', $type: 'application/octet-stream' } as any),
+      () => tree.set({ $path: '/x.bin', $type: 'application/octet-stream' } as any),
     );
   });
 
   it('set() creates parent directories', async () => {
-    const store = await setup();
+    const tree = await setup();
 
     register('text/plain', 'encode', async (node: NodeData, filePath: string) => {
       await writeFile(filePath, 'nested');
     });
 
-    await store.set({ $path: '/deep/nested/file.txt', $type: 'text/plain' } as any);
+    await tree.set({ $path: '/deep/nested/file.txt', $type: 'text/plain' } as any);
 
     const raw = await readFile(join(dir, 'deep', 'nested', 'file.txt'), 'utf-8');
     assert.equal(raw, 'nested');
@@ -188,25 +188,25 @@ describe('RawFsStore', () => {
   });
 
   it('remove() deletes file', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'gone.txt'), 'bye');
 
-    const result = await store.remove('/gone.txt');
+    const result = await tree.remove('/gone.txt');
     assert.equal(result, true);
     await assert.rejects(() => stat(join(dir, 'gone.txt')), { code: 'ENOENT' });
   });
 
   it('remove() missing file returns false', async () => {
-    const store = await setup();
-    const result = await store.remove('/nope.txt');
+    const tree = await setup();
+    const result = await tree.remove('/nope.txt');
     assert.equal(result, false);
   });
 
   it('remove() deletes empty directory', async () => {
-    const store = await setup();
+    const tree = await setup();
     await mkdir(join(dir, 'empty'));
 
-    const result = await store.remove('/empty');
+    const result = await tree.remove('/empty');
     assert.equal(result, true);
     await assert.rejects(() => stat(join(dir, 'empty')), { code: 'ENOENT' });
   });
@@ -214,15 +214,15 @@ describe('RawFsStore', () => {
   // --- .env codec ---
 
   it('.env file → application/x-env', async () => {
-    const store = await setup();
+    const tree = await setup();
     await writeFile(join(dir, 'config.env'), 'PORT=3000\nDB=treenity\n');
 
-    const node = await store.get('/config.env');
+    const node = await tree.get('/config.env');
     assert.equal(node?.$type, 'application/x-env');
   });
 
   it('.env roundtrip: decode → encode → decode', async () => {
-    const store = await setup();
+    const tree = await setup();
 
     // Register env decode
     register('application/x-env', 'decode', async (filePath: string, nodePath: string) => {
@@ -246,8 +246,8 @@ describe('RawFsStore', () => {
       await writeFile(filePath, lines.join('\n') + '\n');
     });
 
-    // Write via store
-    await store.set({
+    // Write via tree
+    await tree.set({
       $path: '/config.env',
       $type: 'application/x-env',
       env: { PORT: '3000', DB_NAME: 'treenity', FEATURE_X: 'true' },
@@ -258,15 +258,15 @@ describe('RawFsStore', () => {
     assert.ok(raw.includes('PORT=3000'));
     assert.ok(raw.includes('DB_NAME=treenity'));
 
-    // Read back via store — roundtrip
-    const node = await store.get('/config.env');
+    // Read back via tree — roundtrip
+    const node = await tree.get('/config.env');
     assert.equal(node?.$type, 'application/x-env');
     assert.deepEqual((node as any).env, { PORT: '3000', DB_NAME: 'treenity', FEATURE_X: 'true' });
 
   });
 
   it('.env decode skips comments and empty lines', async () => {
-    const store = await setup();
+    const tree = await setup();
 
     register('application/x-env', 'decode', async (filePath: string, nodePath: string) => {
       const content = await readFile(filePath, 'utf-8');
@@ -282,7 +282,7 @@ describe('RawFsStore', () => {
     });
 
     await writeFile(join(dir, 'config.env'), '# comment\n\nKEY=value\n# another\nFOO=bar\n');
-    const node = await store.get('/config.env');
+    const node = await tree.get('/config.env');
     assert.deepEqual((node as any).env, { KEY: 'value', FOO: 'bar' });
 
   });

@@ -81,7 +81,7 @@ export interface LoadResult {
 export async function loadMods(
   manifests: ModManifest[],
   target: LoadTarget,
-  store?: Tree,
+  tree?: Tree,
 ): Promise<LoadResult> {
   const sorted = sortByDependencies(manifests);
   const result: LoadResult = { loaded: [], failed: [] };
@@ -108,13 +108,13 @@ export async function loadMods(
 
       if (mod?.onLoad) await mod.onLoad();
 
-      // Seed (server-only, needs store)
-      if (target === 'server' && store) {
+      // Seed (server-only, needs tree)
+      if (target === 'server' && tree) {
         if (mod?.seed) {
-          await mod.seed(store);
+          await mod.seed(tree);
         } else if (manifest.seed && manifest.packagePath) {
           const seedMod = await import(join(manifest.packagePath, manifest.seed));
-          await seedMod.default(store);
+          await seedMod.default(tree);
         }
       }
 

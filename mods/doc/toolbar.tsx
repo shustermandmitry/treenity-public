@@ -1,4 +1,6 @@
 import type { Editor } from '@tiptap/react';
+import { cn } from '@treenity/react/lib/utils';
+import { Button } from '@treenity/react/ui/button';
 import {
   Bold,
   Code,
@@ -17,28 +19,29 @@ function Btn({ active, onClick, title, children }: {
   active?: boolean; onClick: () => void; title: string; children: React.ReactNode;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       onMouseDown={(e) => { e.preventDefault(); onClick(); }}
       title={title}
-      className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
-        active
-          ? 'bg-[var(--accent-color)] text-white'
-          : 'text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
-      }`}
+      className={cn(
+        'h-7 w-7 p-0',
+        active && 'bg-accent text-accent-foreground',
+      )}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
 function Sep() {
-  return <span className="w-px h-4 bg-[var(--border)] mx-1 flex-shrink-0" />;
+  return <span className="w-px h-4 bg-border mx-1 flex-shrink-0" />;
 }
 
 export function Toolbar({ editor }: { editor: Editor }) {
   const sz = 14;
   return (
-    <div className="doc-toolbar flex items-center flex-wrap gap-0.5 px-1 py-1 mb-2 border-b border-[var(--border)]">
+    <div className="doc-toolbar flex items-center flex-wrap gap-0.5 px-1 py-1 mb-2 border-b border-border">
       <Btn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (⌘B)">
         <Bold size={sz} />
       </Btn>

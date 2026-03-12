@@ -8,7 +8,7 @@ function makeNode(path: string, extra?: Record<string, unknown>) {
 }
 
 describe('withCache — reads', () => {
-  it('miss: delegates to underlying store', async () => {
+  it('miss: delegates to underlying tree', async () => {
     const mem = createMemoryTree();
     await mem.set(makeNode('/a'));
     const cached = withCache(mem);
@@ -17,7 +17,7 @@ describe('withCache — reads', () => {
     assert.equal(node.$path, '/a');
   });
 
-  it('hit: second get does not call underlying store', async () => {
+  it('hit: second get does not call underlying tree', async () => {
     let calls = 0;
     const mem = createMemoryTree();
     await mem.set(makeNode('/a'));
@@ -76,7 +76,7 @@ describe('withCache — writes populate', () => {
 
     await cached.set(makeNode('/a', { v: 1 }));
     const node = await cached.get('/a');
-    assert.equal(node?.$rev, 1, 'cache should have $rev bumped by store');
+    assert.equal(node?.$rev, 1, 'cache should have $rev bumped by tree');
   });
 
   it('set then bypass update then set — cache reflects last write', async () => {

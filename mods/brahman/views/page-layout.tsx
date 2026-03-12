@@ -112,22 +112,24 @@ function SortableAction({
           )}
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="p-0 h-auto text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100"
           onClick={e => { e.stopPropagation(); onSelect(); }}
-          className="text-muted-foreground hover:text-foreground text-[10px] opacity-0 group-hover:opacity-100"
           title="Select in tree"
         >
           &#8599;
-        </button>
+        </Button>
 
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="p-0 h-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
           onClick={e => { e.stopPropagation(); onRemove(); }}
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
         >
           <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
 
       {/* Inline editor */}

@@ -150,13 +150,13 @@ describe('getCtx', () => {
     }
     registerType('als.test', AlsNode);
 
-    const store = createMemoryTree();
-    await store.set(createNode('/a', 'als.test'));
-    await store.set(createNode('/b', 'als.test'));
+    const tree = createMemoryTree();
+    await tree.set(createNode('/a', 'als.test'));
+    await tree.set(createNode('/b', 'als.test'));
 
     const [pathA, pathB] = await Promise.all([
-      executeAction(store, '/a', undefined, undefined, 'whoami'),
-      executeAction(store, '/b', undefined, undefined, 'whoami'),
+      executeAction(tree, '/a', undefined, undefined, 'whoami'),
+      executeAction(tree, '/b', undefined, undefined, 'whoami'),
     ]);
 
     assert.equal(pathA, '/a');

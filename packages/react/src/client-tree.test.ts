@@ -51,12 +51,12 @@ function createMockTrpc(backing: Map<string, NodeData>) {
 describe('createClientTree — unified client tree', () => {
   it('/local/* paths stay in memory, never hit tRPC', async () => {
     const mock = createMockTrpc(new Map());
-    const { tree: store } = createClientTree(mock as any);
+    const { tree } = createClientTree(mock as any);
 
-    await store.set({ $path: '/local/ui/theme', $type: 'theme', dark: true } as NodeData);
+    await tree.set({ $path: '/local/ui/theme', $type: 'theme', dark: true } as NodeData);
     mock.resetCalls();
 
-    const node = await store.get('/local/ui/theme');
+    const node = await tree.get('/local/ui/theme');
     assert.equal(mock.calls, 0, 'tRPC should not be called for /local paths');
     assert.equal(node?.$type, 'theme');
     assert.equal((node as any).dark, true);
@@ -66,9 +66,9 @@ describe('createClientTree — unified client tree', () => {
     const backing = new Map<string, NodeData>();
     backing.set('/orders/1', { $path: '/orders/1', $type: 'order', total: 42 } as NodeData);
     const mock = createMockTrpc(backing);
-    const { tree: store } = createClientTree(mock as any);
+    const { tree } = createClientTree(mock as any);
 
-    const node = await store.get('/orders/1');
+    const node = await tree.get('/orders/1');
     assert.ok(mock.calls > 0, 'tRPC should be called for remote paths');
     assert.equal((node as any).total, 42);
   });
@@ -77,13 +77,13 @@ describe('createClientTree — unified client tree', () => {
     const backing = new Map<string, NodeData>();
     backing.set('/cloud', { $path: '/cloud', $type: 'dir' } as NodeData);
     const mock = createMockTrpc(backing);
-    const { tree: store } = createClientTree(mock as any);
+    const { tree } = createClientTree(mock as any);
 
     // Write a local node
-    await store.set({ $path: '/local', $type: 'dir' } as NodeData);
+    await tree.set({ $path: '/local', $type: 'dir' } as NodeData);
 
     // getChildren('/') should return both
-    const { items } = await store.getChildren('/');
+    const { items } = await tree.getChildren('/');
     const paths = items.map((n: { $path: string }) => n.$path).sort();
     assert.ok(paths.includes('/local'), 'should include local children');
     assert.ok(paths.includes('/cloud'), 'should include remote children');
@@ -91,14 +91,14 @@ describe('createClientTree — unified client tree', () => {
 
   it('remove /local/* does not call tRPC', async () => {
     const mock = createMockTrpc(new Map());
-    const { tree: store } = createClientTree(mock as any);
+    const { tree } = createClientTree(mock as any);
 
-    await store.set({ $path: '/local/temp', $type: 'tmp' } as NodeData);
+    await tree.set({ $path: '/local/temp', $type: 'tmp' } as NodeData);
     mock.resetCalls();
 
-    await store.remove('/local/temp');
+    await tree.remove('/local/temp');
     // filterStore tries both, but remote remove is harmless no-op
-    const node = await store.get('/local/temp');
+    const node = await tree.get('/local/temp');
     assert.equal(node, undefined, '/local/temp should be gone');
   });
 
@@ -106,11 +106,11 @@ describe('createClientTree — unified client tree', () => {
     const backing = new Map<string, NodeData>();
     backing.set('/x', { $path: '/x', $type: 'test' } as NodeData);
     const mock = createMockTrpc(backing);
-    const { tree: store } = createClientTree(mock as any);
+    const { tree } = createClientTree(mock as any);
 
-    await store.get('/x'); // populates cache
+    await tree.get('/x'); // populates cache
     mock.resetCalls();
-    await store.get('/x'); // should hit cache
+    await tree.get('/x'); // should hit cache
     assert.equal(mock.calls, 0, 'second get should come from cache');
   });
 });

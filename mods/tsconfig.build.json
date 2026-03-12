@@ -1,0 +1,32 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "board",
+    "brahman",
+    "cafe",
+    "canary",
+    "doc",
+    "launcher",
+    "mindmap",
+    "sensor-demo",
+    "sensor-generator",
+    "sim",
+    "table",
+    "tasks",
+    "three",
+    "todo",
+    "whisper"
+  ],
+  "exclude": ["**/*.test.ts"]
+}
