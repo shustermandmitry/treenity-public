@@ -91,8 +91,8 @@ export async function discoverLocalMods(modsDir: string): Promise<TreenityMod[]>
       const exported = await import(indexPath);
       const mod = exported.default as TreenityMod;
       if (mod?.name) results.push(mod);
-    } catch {
-      // bad index.ts — skip silently
+    } catch (err) {
+      console.warn(`[mod] failed to load ${entry.name}:`, err instanceof Error ? err.message : err);
     }
   }
 

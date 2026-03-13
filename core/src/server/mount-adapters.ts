@@ -60,9 +60,19 @@ register('t.mount.rawfs', 'mount', async (config: NodeData) => {
 // Federation: mount a remote Treenity instance's tree via tRPC.
 // connection.url = remote server, connection.path = remote subtree root (default '/'),
 // connection.token = auth token. Path translation handled by createRepathTree.
+// F18: reject private/internal IP ranges to prevent SSRF via mount creation.
+const PRIVATE_HOST_RE = /^(?:localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[::1?\])(?::\d+)?$/i;
+
 register('t.mount.tree.trpc', 'mount', async (config: NodeData) => {
   const conn = getComponent<{ url?: string; path?: string; token?: string }>(config, 'connection');
   if (!conn?.url) throw new Error('t.mount.trpc: connection.url required');
+  try {
+    const host = new URL(conn.url).host;
+    if (PRIVATE_HOST_RE.test(host)) throw new Error(`t.mount.trpc: private/internal URL denied: ${host}`);
+  } catch (e) {
+    if (e instanceof TypeError) throw new Error(`t.mount.trpc: invalid URL: ${conn.url}`);
+    throw e;
+  }
   const { tree } = createTrpcTransport({ url: conn.url, token: conn.token });
   return createRepathTree(tree, config.$path, conn.path ?? '/');
 });
