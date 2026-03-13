@@ -20,18 +20,27 @@ import {
   createSession,
   DUMMY_HASH,
   hashPassword,
+  resolvePermission,
   revokeSession,
   type Session,
+  stripComponents,
   verifyPassword,
   withAcl,
 } from './auth';
 import { OpError } from './errors';
+import { assertSafePath } from '#core/path';
 import { deployPrefab as deployPrefabOp } from './prefab';
 import { type NodeEvent, type ReactiveTree, unwatchQuery, watchQuery } from './sub';
 import { extractPaths } from './volatile';
 import { type WatchManager } from './watch';
 
 export type TrpcContext = { session: Session | null; token: string | null };
+
+/** Zod schema that validates tree paths — rejects traversal, null bytes, double slashes */
+const safePath = z.string().superRefine((p, ctx) => {
+  try { assertSafePath(p); }
+  catch (e) { ctx.addIssue({ code: z.ZodIssueCode.custom, message: (e as Error).message }); }
+});
 
 // ── Rate limiter (in-memory, per key) ──
 
@@ -85,7 +94,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
 
   return t.router({
     get: authed
-      .input(z.object({ path: z.string(), watch: z.boolean().optional() }))
+      .input(z.object({ path: safePath, watch: z.boolean().optional() }))
       .query(async ({ input, ctx }) => {
         const node = await ctx.tree.get(input.path);
         if (input.watch && ctx.session && (await ctx.tree.getPerm(input.path)) & S)
@@ -96,7 +105,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
     getChildren: authed
       .input(
         z.object({
-          path: z.string(),
+          path: safePath,
           limit: z.number().optional().default(100),
           offset: z.number().optional(),
           depth: z.number().optional(),
@@ -135,18 +144,18 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
 
     setComponent: authed
       .input(
-        z.object({ path: z.string(), name: z.string(), data: z.record(z.string(), z.unknown()), rev: z.number().optional() }),
+        z.object({ path: safePath, name: z.string(), data: z.record(z.string(), z.unknown()), rev: z.number().optional() }),
       )
       .mutation(({ input, ctx }) => setComponentOp(ctx.tree, input.path, input.name, input.data, input.rev)),
 
     remove: authed
-      .input(z.object({ path: z.string() }))
+      .input(z.object({ path: safePath }))
       .mutation(({ input, ctx }) => ctx.tree.remove(input.path)),
 
     execute: authed
       .input(
         z.object({
-          path: z.string(),
+          path: safePath,
           type: z.string().optional(),   // $type for component verification
           key: z.string().optional(),    // field key for component selection
           action: z.string(),
@@ -168,13 +177,13 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
     ),
 
     applyTemplate: authed
-      .input(z.object({ templatePath: z.string(), targetPath: z.string() }))
+      .input(z.object({ templatePath: safePath, targetPath: safePath }))
       .mutation(({ input, ctx }) => applyTemplateOp(ctx.tree, input.templatePath, input.targetPath)),
 
     deployPrefab: authed
       .input(z.object({
-        source: z.string(),
-        target: z.string(),
+        source: safePath,
+        target: safePath,
         allowAbsolute: z.boolean().optional(),
         params: z.any().optional(),
       }))
@@ -230,7 +239,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
     }),
 
     getPerm: authed
-      .input(z.object({ path: z.string() }))
+      .input(z.object({ path: safePath }))
       .query(async ({ input, ctx }) => ctx.tree.getPerm(input.path)),
 
     logout: authed.mutation(async ({ ctx }) => {
@@ -241,7 +250,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
 
     // Agent TOFU handshake — public endpoint (no auth required)
     agentConnect: t.procedure
-      .input(z.object({ path: z.string().min(1), key: z.string().min(1) }))
+      .input(z.object({ path: safePath, key: z.string().min(1) }))
       .mutation(async ({ input }) => {
         checkRate(`agent:${input.path}`);
         const node = await baseStore.get(input.path);
@@ -305,7 +314,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
     }),
 
     streamAction: authed
-      .input(z.object({ path: z.string(), type: z.string().optional(), key: z.string().optional(), action: z.string(), data: z.unknown().optional() }))
+      .input(z.object({ path: safePath, type: z.string().optional(), key: z.string().optional(), action: z.string(), data: z.unknown().optional() }))
       .subscription(({ input, ctx }) => {
         return observable<unknown>((emit) => {
           const ac = new AbortController();
@@ -363,8 +372,28 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
       return observable<NodeEvent>((emit) => {
         const userId = ctx.session?.userId;
         if (!userId) return () => {};
+        const claims = ctx.session?.claims ?? [];
         const connId = `${userId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-        const preserved = watcher.connect(connId, userId, (event) => emit.next(event));
+
+        const filteredPush = async (event: NodeEvent) => {
+          if (event.type === 'reconnect') { emit.next(event); return; }
+
+          // ACL check: verify user can still read this path
+          const perm = await resolvePermission(baseStore, event.path, userId, claims.length ? claims : await buildClaims(baseStore, userId));
+          if (!(perm & R)) return; // silently drop — user lost read access
+
+          // Strip forbidden components from set events
+          if (event.type === 'set' && event.node) {
+            const fullNode = { $path: event.path, ...event.node } as NodeData;
+            const stripped = stripComponents(fullNode, userId, claims.length ? claims : await buildClaims(baseStore, userId));
+            const { $path, ...body } = stripped;
+            emit.next({ ...event, node: body });
+          } else {
+            emit.next(event);
+          }
+        };
+
+        const preserved = watcher.connect(connId, userId, (event) => { filteredPush(event).catch(() => {}); });
         emit.next({ type: 'reconnect', preserved });
         return () => watcher.disconnect(connId);
       });

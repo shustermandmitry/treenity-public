@@ -1,4 +1,4 @@
-import { basename, dirname, isChildPath, join } from '#core/path';
+import { assertSafePath, basename, dirname, isChildPath, join } from '#core/path';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
@@ -219,6 +219,33 @@ describe('Context', () => {
   it('render throws on missing handler', () => {
     clearRegistry();
     assert.throws(() => render({ $type: 'nope' }, 'react'));
+  });
+});
+
+describe('assertSafePath (F03)', () => {
+  it('accepts valid paths', () => {
+    assertSafePath('/');
+    assertSafePath('/board');
+    assertSafePath('/board/task-1');
+    assertSafePath('/a/b/c/d');
+  });
+
+  it('rejects path without leading slash', () => {
+    assert.throws(() => assertSafePath('board'), /must start with/);
+  });
+
+  it('rejects traversal (..)', () => {
+    assert.throws(() => assertSafePath('/board/../admin'), /traversal/);
+    assert.throws(() => assertSafePath('/..'), /traversal/);
+  });
+
+  it('rejects null bytes', () => {
+    assert.throws(() => assertSafePath('/test\0/evil'), /null byte/);
+  });
+
+  it('rejects double slashes', () => {
+    assert.throws(() => assertSafePath('//admin'), /double slash/);
+    assert.throws(() => assertSafePath('/board//task'), /double slash/);
   });
 });
 
