@@ -2,12 +2,13 @@
 
 import { createNode, register } from '@treenity/core';
 import '@treenity/core/contexts/service';
+import { safeInterval } from '@treenity/core/util/safe-timers';
 import { SensorReading } from './types';
 
 register('examples.demo.sensor', 'service', async (node, ctx) => {
   let seq = 0;
   const MAX = 10;
-  const timer = setInterval(async () => {
+  const timer = safeInterval(async () => {
     const ts = Date.now();
     const name = String(ts).slice(-6).padStart(6, '0');
     await ctx.tree.set(createNode(`${node.$path}/${name}`, SensorReading, {
@@ -21,7 +22,7 @@ register('examples.demo.sensor', 'service', async (node, ctx) => {
       items.sort((a, b) => (a.ts as number) - (b.ts as number));
       for (const old of items.slice(0, items.length - MAX)) await ctx.tree.remove(old.$path);
     }
-  }, 1000);
+  }, 1000, 'sensor-demo.tick');
   console.log(`[sensor-demo] started on ${node.$path}`);
   return { stop: async () => clearInterval(timer) };
 });
