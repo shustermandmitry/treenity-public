@@ -3,29 +3,23 @@
 
 import { validateNode } from '#comp/validate';
 import type { Tree } from '#tree';
+import { patchViaSet } from '#tree';
+import { OpError } from './errors';
 
 export function withValidation(tree: Tree): Tree {
-  return {
+  const wrapper: Tree = {
     ...tree,
     async set(node) {
       const errors = validateNode(node);
       if (errors.length) {
         const msg = errors.map(e => `${e.path}: ${e.message}`).join('; ');
-        throw new Error(`Validation: ${msg}`);
+        throw new OpError('BAD_REQUEST', `Validation: ${msg}`);
       }
       return tree.set(node);
     },
     async patch(path, ops, ctx) {
-      // F14: validate node state after patch — reject if result breaks schema
-      await tree.patch(path, ops, ctx);
-      const patched = await tree.get(path);
-      if (patched) {
-        const errors = validateNode(patched);
-        if (errors.length) {
-          const msg = errors.map(e => `${e.path}: ${e.message}`).join('; ');
-          throw new Error(`Validation (post-patch): ${msg}`);
-        }
-      }
+      return patchViaSet(wrapper, path, ops, ctx);
     },
   };
+  return wrapper;
 }

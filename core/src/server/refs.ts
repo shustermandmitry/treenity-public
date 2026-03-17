@@ -3,7 +3,7 @@
 // Standalone refs (no f:) pass through untouched.
 
 import { isRef, type NodeData, type RefEntry } from '#core';
-import type { Tree } from '#tree';
+import { applyOps, type PatchOp, type Tree } from '#tree';
 
 /** Deep-scan node for $ref fields, return derived RefEntries */
 function extractRefs(node: NodeData): RefEntry[] {
@@ -52,13 +52,17 @@ export function withRefIndex(inner: Tree): Tree {
     },
 
     async patch(path, ops, ctx) {
-      await inner.patch(path, ops, ctx);
-      // Re-extract refs after patch
-      const updated = await inner.get(path, ctx);
-      if (updated) {
-        updated.$refs = buildRefs(updated);
-        await inner.set(updated, ctx);
-      }
+      // Compute $refs from patched state, then do a single atomic write
+      const current = await inner.get(path, ctx);
+      if (!current) return inner.patch(path, ops, ctx); // let inner throw "not found"
+
+      const clone = structuredClone(current);
+      applyOps(clone as Record<string, unknown>, ops);
+      const newRefs = buildRefs(clone);
+
+      // Append $refs op last — wins over any user-supplied $refs patch
+      const refsOp: PatchOp = newRefs ? ['r', '$refs', newRefs] : ['d', '$refs'];
+      return inner.patch(path, [...ops, refsOp], ctx);
     },
   };
 }

@@ -79,4 +79,54 @@ describe('withRefIndex', () => {
     assert.ok(node.$refs.some(r => r.t === '/couriers/alex' && r.f === '#delivery.courier'));
     assert.ok(node.$refs.some(r => r.t === '/warehouses/main' && r.f === '#delivery.warehouse'));
   });
+
+  it('updates $refs after patch (single write)', async () => {
+    const tree = withRefIndex(createMemoryTree());
+    await tree.set({
+      $path: '/order/3', $type: 'cafe.order',
+      customer: { $type: 'ref', $ref: '/customers/alice' },
+    });
+
+    await tree.patch('/order/3', [
+      ['r', 'customer', { $type: 'ref', $ref: '/customers/bob' }],
+    ]);
+
+    const node = await tree.get('/order/3');
+    assert.ok(node?.$refs);
+    assert.equal(node.$refs.length, 1);
+    assert.equal(node.$refs[0].t, '/customers/bob');
+    assert.equal(node.$refs[0].f, '#customer');
+  });
+
+  it('removes $refs when patch clears all refs', async () => {
+    const tree = withRefIndex(createMemoryTree());
+    await tree.set({
+      $path: '/order/4', $type: 'cafe.order',
+      customer: { $type: 'ref', $ref: '/customers/alice' },
+    });
+
+    await tree.patch('/order/4', [['d', 'customer']]);
+
+    const node = await tree.get('/order/4');
+    assert.equal(node?.$refs, undefined);
+  });
+
+  it('patch calls inner.patch once, never inner.set', async () => {
+    const inner = createMemoryTree();
+    let patchCalls = 0;
+    let setCalls = 0;
+    const spy: typeof inner = {
+      ...inner,
+      async patch(...args: Parameters<typeof inner.patch>) { patchCalls++; return inner.patch(...args); },
+      async set(...args: Parameters<typeof inner.set>) { setCalls++; return inner.set(...args); },
+    };
+    const tree = withRefIndex(spy);
+
+    await tree.set({ $path: '/x', $type: 't', link: { $type: 'ref', $ref: '/y' } });
+    setCalls = 0; // reset after setup
+
+    await tree.patch('/x', [['r', 'link', { $type: 'ref', $ref: '/z' }]]);
+    assert.equal(patchCalls, 1, 'should call inner.patch exactly once');
+    assert.equal(setCalls, 0, 'should never call inner.set during patch');
+  });
 });

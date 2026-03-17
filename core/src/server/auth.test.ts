@@ -428,6 +428,32 @@ describe('sessions', () => {
     assert.equal(session?.userId, 'alice');
   });
 
+  it('session nodes have admin-only $acl', async () => {
+    const token = await createSession(ss, 'alice');
+    const node = await ss.get(`/auth/sessions/${token}`);
+    assert.ok(node?.$acl, 'session node must have $acl');
+    assert.equal(node!.$acl!.length, 1);
+    assert.equal(node!.$acl![0].g, 'admins');
+    assert.equal(node!.$acl![0].p, R | W | A | S);
+  });
+
+  it('non-admin cannot read session nodes via ACL', async () => {
+    // Set up parent ACL like seed data
+    await ss.set({ $path: '/auth', $type: 'dir', $acl: [{ g: 'admins', p: R | W | A | S }, { g: 'public', p: 0 }] });
+    await ss.set({ $path: '/auth/sessions', $type: 'dir', $acl: [{ g: 'admins', p: R | W | A | S }, { g: 'authenticated', p: 0 }, { g: 'public', p: 0 }] });
+    const token = await createSession(ss, 'alice');
+
+    // Authenticated non-admin: denied
+    const userTree = withAcl(ss, 'alice', ['u:alice', 'authenticated']);
+    const node = await userTree.get(`/auth/sessions/${token}`);
+    assert.equal(node, undefined, 'non-admin should not read session node');
+
+    // Admin: allowed
+    const adminTree = withAcl(ss, 'admin', ['u:admin', 'admins', 'authenticated']);
+    const adminNode = await adminTree.get(`/auth/sessions/${token}`);
+    assert.ok(adminNode, 'admin should read session node');
+  });
+
   it('unknown token returns null', async () => {
     assert.equal(await resolveToken(ss, 'bogus'), null);
   });
@@ -437,5 +463,42 @@ describe('sessions', () => {
     assert.ok(await revokeSession(ss, token));
     assert.equal(await resolveToken(ss, token), null);
     assert.equal(await revokeSession(ss, token), false);
+  });
+});
+
+describe('getChildren truncation', () => {
+  beforeEach(() => clearRegistry());
+
+  it('sets truncated=true when ACL scan limit is hit', async () => {
+    const base = createMemoryTree();
+
+    // Create a proxy tree that pretends getChildren returned MAX_ACL_SCAN items
+    // by returning exactly 10_000 dummy nodes, triggering the truncation path
+    const items: import('#core').NodeData[] = [];
+    for (let i = 0; i < 10_000; i++) {
+      items.push(createNode(`/big/${i}`, 'doc'));
+    }
+    const fakeTree: Tree = {
+      ...base,
+      async getChildren() {
+        return { items, total: items.length };
+      },
+    };
+
+    const s = withAcl(fakeTree, 'admin', ['u:admin', 'authenticated']);
+    const result = await s.getChildren('/big');
+    assert.equal(result.truncated, true);
+  });
+
+  it('truncated is undefined for normal results', async () => {
+    const base = createMemoryTree();
+    await base.set({ $path: '/small', $type: 'folder', $acl: [{ g: 'authenticated', p: R }] });
+    await base.set(createNode('/small/a', 'doc'));
+    await base.set(createNode('/small/b', 'doc'));
+
+    const s = withAcl(base, 'admin', ['u:admin', 'authenticated']);
+    const result = await s.getChildren('/small');
+    assert.equal(result.truncated, undefined);
+    assert.equal(result.items.length, 2);
   });
 });

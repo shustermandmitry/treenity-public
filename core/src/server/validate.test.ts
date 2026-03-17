@@ -80,6 +80,56 @@ describe('withValidation (Write-Barrier)', () => {
     assert.ok(await vs.get('/a'));
   });
 
+  it('rejects patch that produces invalid state', async () => {
+    const vs = withValidation(tree);
+    // Write a valid node
+    await vs.set({
+      $path: '/a', $type: 'item',
+      metadata: { $type: 'metadata', title: 'Hello', count: 5 },
+    } as NodeData);
+    // Patch count to a string — violates schema (number expected)
+    await assert.rejects(
+      () => vs.patch('/a', [['r', 'metadata.count', 'not-a-number']]),
+      (e: Error) => e.name === 'OpError' && e.message.includes('Validation'),
+    );
+  });
+
+  it('allows valid patch', async () => {
+    const vs = withValidation(tree);
+    await vs.set({
+      $path: '/a', $type: 'item',
+      metadata: { $type: 'metadata', title: 'Hello', count: 5 },
+    } as NodeData);
+    // Patch count to a valid number
+    await vs.patch('/a', [['r', 'metadata.count', 10]]);
+    const node = await vs.get('/a');
+    assert.equal((node?.metadata as any).count, 10);
+  });
+
+  it('patch never writes invalid data to underlying tree', async () => {
+    const vs = withValidation(tree);
+    await vs.set({
+      $path: '/a', $type: 'item',
+      metadata: { $type: 'metadata', title: 'Hello', count: 5 },
+    } as NodeData);
+
+    // Spy on inner tree to detect any writes
+    let innerSetCalls = 0;
+    const origSet = tree.set.bind(tree);
+    tree.set = async (node, ctx) => { innerSetCalls++; return origSet(node, ctx); };
+    innerSetCalls = 0;
+
+    // Invalid patch — should throw without writing to inner tree
+    await assert.rejects(
+      () => vs.patch('/a', [['r', 'metadata.count', 'not-a-number']]),
+    );
+    assert.equal(innerSetCalls, 0, 'no writes should reach inner tree on validation failure');
+
+    // Verify the original data is intact
+    const node = await tree.get('/a');
+    assert.equal((node?.metadata as any).count, 5);
+  });
+
   it('get/getChildren/remove pass through', async () => {
     const vs = withValidation(tree);
     await tree.set(createNode('/a', 'item'));

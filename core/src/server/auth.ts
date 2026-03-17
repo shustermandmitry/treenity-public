@@ -58,7 +58,7 @@ export async function resolveToken(tree: Tree, token: string): Promise<Session |
   const node = await tree.get(`/auth/sessions/${token}`) as SessionNode | undefined;
   if (!node) return null;
   if (!node.userId || !node.expiresAt) {
-    console.error(`[auth] corrupt session: ${token} (missing userId or expiresAt)`);
+    console.error(`[auth] corrupt session: ${token.slice(0, 8)}... (missing ${!node.userId ? 'userId' : 'expiresAt'})`);
     await tree.remove(`/auth/sessions/${token}`);
     return null;
   }
@@ -262,7 +262,6 @@ export function stripComponents(node: NodeData, userId: string | null, claims: s
   if (node.$owner) out.$owner = node.$owner;
   if (node.$rev !== undefined) out.$rev = node.$rev;
   if ('$ref' in node) out['$ref'] = node['$ref'];
-  if ('$patches' in node) out['$patches'] = node['$patches'];
   for (const [key, val] of Object.entries(node)) {
     if (key.startsWith('$')) continue;
     if (!isComponent(val)) { out[key] = val; continue; }
