@@ -10,6 +10,8 @@ export type WatchPush = (event: NodeEvent) => void;
 export type WatchManagerOpts = {
   gracePeriodMs?: number;
   onUserRemoved?: (userId: string) => void;
+  maxWatchesPerUser?: number;
+  maxTotalWatches?: number;
 };
 
 export type WatchOpts = { children?: boolean; autoWatch?: boolean };
@@ -25,6 +27,8 @@ export type WatchManager = {
 };
 
 const DEFAULT_GRACE_MS = 5_000;
+const MAX_WATCHES_PER_USER = 10_000;
+const MAX_TOTAL_WATCHES = 100_000;
 
 function addTo(map: Map<string, Set<string>>, key: string, uid: string) {
   let set = map.get(key);
@@ -44,6 +48,8 @@ function removeFrom(map: Map<string, Set<string>>, key: string, uid: string) {
 
 export function createWatchManager(opts?: WatchManagerOpts): WatchManager {
   const gracePeriodMs = opts?.gracePeriodMs ?? DEFAULT_GRACE_MS;
+  const maxPerUser = opts?.maxWatchesPerUser ?? MAX_WATCHES_PER_USER;
+  const maxTotal = opts?.maxTotalWatches ?? MAX_TOTAL_WATCHES;
   const pathToUsers = new Map<string, Set<string>>();
   const prefixToUsers = new Map<string, Set<string>>();
   const users = new Map<
@@ -51,10 +57,25 @@ export function createWatchManager(opts?: WatchManagerOpts): WatchManager {
     { pushes: Map<string, WatchPush>; paths: Set<string>; prefixes: Map<string, boolean> }
   >();
   const graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let totalWatches = 0;
+
+  function userWatchCount(user: { paths: Set<string>; prefixes: Map<string, boolean> }): number {
+    return user.paths.size + user.prefixes.size;
+  }
+
+  function checkLimits(user: { paths: Set<string>; prefixes: Map<string, boolean> }, adding: number) {
+    if (userWatchCount(user) + adding > maxPerUser) {
+      throw new Error(`Watch limit exceeded: max ${maxPerUser} watches per user`);
+    }
+    if (totalWatches + adding > maxTotal) {
+      throw new Error(`Server watch limit exceeded`);
+    }
+  }
 
   function removeUser(userId: string) {
     const user = users.get(userId);
     if (!user) return;
+    totalWatches -= userWatchCount(user);
     for (const p of user.paths) removeFrom(pathToUsers, p, userId);
     for (const p of user.prefixes.keys()) removeFrom(prefixToUsers, p, userId);
     users.delete(userId);
@@ -112,6 +133,16 @@ export function createWatchManager(opts?: WatchManagerOpts): WatchManager {
     watch(userId, paths, watchOpts) {
       const user = ensureUser(userId);
 
+      // Count only new additions (skip duplicates)
+      let newCount = 0;
+      if (watchOpts?.children) {
+        for (const p of paths) if (!user.prefixes.has(p)) newCount++;
+      } else {
+        for (const p of paths) if (!user.paths.has(p)) newCount++;
+      }
+
+      if (newCount > 0) checkLimits(user, newCount);
+
       if (watchOpts?.children) {
         for (const p of paths) {
           user.prefixes.set(p, watchOpts.autoWatch ?? false);
@@ -123,23 +154,26 @@ export function createWatchManager(opts?: WatchManagerOpts): WatchManager {
           addTo(pathToUsers, p, userId);
         }
       }
+      totalWatches += newCount;
     },
 
     unwatch(userId, paths, unwatchOpts) {
       const user = users.get(userId);
       if (!user) return;
 
+      let removed = 0;
       if (unwatchOpts?.children) {
         for (const p of paths) {
-          user.prefixes.delete(p);
+          if (user.prefixes.has(p)) { user.prefixes.delete(p); removed++; }
           removeFrom(prefixToUsers, p, userId);
         }
       } else {
         for (const p of paths) {
-          user.paths.delete(p);
+          if (user.paths.has(p)) { user.paths.delete(p); removed++; }
           removeFrom(pathToUsers, p, userId);
         }
       }
+      totalWatches -= removed;
     },
 
     notify(event) {
@@ -166,10 +200,11 @@ export function createWatchManager(opts?: WatchManagerOpts): WatchManager {
           const user = users.get(uid);
           if (!user) continue;
           pushToUser(uid, event);
-          // autoWatch: subscribe to exact path for future updates
-          if (user.prefixes.get(parent)) {
+          // autoWatch: subscribe to exact path for future updates (respects limit)
+          if (user.prefixes.get(parent) && !user.paths.has(event.path) && userWatchCount(user) < maxPerUser) {
             user.paths.add(event.path);
             addTo(pathToUsers, event.path, uid);
+            totalWatches++;
           }
         }
 
@@ -184,9 +219,10 @@ export function createWatchManager(opts?: WatchManagerOpts): WatchManager {
             const user = users.get(uid);
             if (!user) continue;
             pushToUser(uid, event);
-            if (user.prefixes.get(vp)) {
+            if (user.prefixes.get(vp) && !user.paths.has(event.path) && userWatchCount(user) < maxPerUser) {
               user.paths.add(event.path);
               addTo(pathToUsers, event.path, uid);
+              totalWatches++;
             }
           }
         }

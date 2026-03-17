@@ -333,6 +333,88 @@ describe('Stress: watch fan-out', () => {
   });
 });
 
+// ── 4b. Watch Limits ──
+
+describe('Stress: watch limits', () => {
+  it('rejects watch() when per-user limit exceeded', () => {
+    const limited = createWatchManager({ maxWatchesPerUser: 5 });
+    limited.connect('u1', 'u1', () => {});
+    limited.watch('u1', ['/a', '/b', '/c', '/d', '/e']); // 5 — at limit
+    assert.throws(
+      () => limited.watch('u1', ['/f']),
+      /Watch limit exceeded/,
+    );
+  });
+
+  it('allows re-watching already watched paths (no double-count)', () => {
+    const limited = createWatchManager({ maxWatchesPerUser: 3 });
+    limited.connect('u1', 'u1', () => {});
+    limited.watch('u1', ['/a', '/b', '/c']); // 3 — at limit
+    limited.watch('u1', ['/a', '/b']); // re-watch existing — should not throw
+  });
+
+  it('rejects watch() when global limit exceeded', () => {
+    const limited = createWatchManager({ maxTotalWatches: 5 });
+    limited.connect('u1', 'u1', () => {});
+    limited.connect('u2', 'u2', () => {});
+    limited.watch('u1', ['/a', '/b', '/c']);
+    limited.watch('u2', ['/d', '/e']);
+    assert.throws(
+      () => limited.watch('u2', ['/f']),
+      /Server watch limit/,
+    );
+  });
+
+  it('unwatch frees capacity', () => {
+    const limited = createWatchManager({ maxWatchesPerUser: 3 });
+    limited.connect('u1', 'u1', () => {});
+    limited.watch('u1', ['/a', '/b', '/c']);
+    limited.unwatch('u1', ['/b']);
+    limited.watch('u1', ['/d']); // should succeed — now 3 again
+  });
+
+  it('disconnect + grace expiry frees capacity for global limit', async () => {
+    const limited = createWatchManager({ maxTotalWatches: 5, gracePeriodMs: 10 });
+    limited.connect('u1', 'u1', () => {});
+    limited.watch('u1', ['/a', '/b', '/c', '/d', '/e']);
+    limited.disconnect('u1');
+    // Wait for grace period to expire
+    await new Promise((r) => setTimeout(r, 50));
+    limited.connect('u2', 'u2', () => {});
+    limited.watch('u2', ['/x', '/y']); // should succeed — u1 freed
+  });
+
+  it('prefix watches count toward limit', () => {
+    const limited = createWatchManager({ maxWatchesPerUser: 3 });
+    limited.connect('u1', 'u1', () => {});
+    limited.watch('u1', ['/a', '/b'], { children: true }); // 2 prefixes
+    limited.watch('u1', ['/c']); // 1 exact — now at 3
+    assert.throws(
+      () => limited.watch('u1', ['/d']),
+      /Watch limit exceeded/,
+    );
+  });
+
+  it('autoWatch respects per-user limit', () => {
+    const limited = createWatchManager({ maxWatchesPerUser: 4 });
+    limited.connect('u1', 'u1', () => {});
+    limited.watch('u1', ['/items'], { children: true, autoWatch: true }); // 1 prefix
+    limited.watch('u1', ['/x', '/y']); // 2 exact — now at 3
+
+    // Simulate child notifications — only 1 should auto-add (limit=4)
+    for (let i = 0; i < 10; i++) {
+      limited.notify({ type: 'set', path: `/items/item-${i}`, node: {} as any });
+    }
+
+    // Only 1 auto-watch should have been added (3 + 1 = 4 = limit)
+    // Attempting to add more exact watches should fail
+    assert.throws(
+      () => limited.watch('u1', ['/z']),
+      /Watch limit exceeded/,
+    );
+  });
+});
+
 // ── 5. Query Mount + CDC Matrix ──
 
 describe('Stress: query mounts + CDC', () => {

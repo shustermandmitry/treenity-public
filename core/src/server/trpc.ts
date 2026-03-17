@@ -17,6 +17,7 @@ import {
 import { AGENT_SESSION_TTL, hashAgentKey, timingSafeCompare } from './agent';
 import {
   buildClaims,
+  componentPerm,
   createSession,
   DUMMY_HASH,
   hashPassword,
@@ -33,8 +34,30 @@ import { deployPrefab as deployPrefabOp } from './prefab';
 import { type NodeEvent, type ReactiveTree, unwatchQuery, watchQuery } from './sub';
 import { extractPaths } from './volatile';
 import { type WatchManager } from './watch';
+import type { Operation } from 'fast-json-patch';
 
 export type TrpcContext = { session: Session | null; token: string | null };
+
+/**
+ * Filter RFC 6902 patch operations, removing ops that target restricted components.
+ * Patch paths are like "/componentKey/field" — first segment is the node key.
+ */
+function filterPatches(
+  patches: Operation[],
+  node: NodeData,
+  userId: string | null,
+  claims: string[],
+): Operation[] {
+  return patches.filter(op => {
+    // Extract first path segment: "/foo/bar" → "foo"
+    const seg = op.path.split('/')[1];
+    if (!seg || seg.startsWith('$')) return true; // system fields pass through
+    const val = node[seg];
+    if (!isComponent(val)) return true; // plain fields pass through
+    // Component — check component-level R permission
+    return !!(componentPerm(val, userId, claims, node.$owner) & R);
+  });
+}
 
 /** Zod schema that validates tree paths — rejects traversal, null bytes, double slashes */
 const safePath = z.string().superRefine((p, ctx) => {
@@ -140,7 +163,10 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
 
     set: authed
       .input(z.object({ node: z.record(z.string(), z.unknown()) }))
-      .mutation(({ input, ctx }) => ctx.tree.set(input.node as NodeData)),
+      .mutation(({ input, ctx }) => {
+        const { $patches, ...clean } = input.node;
+        return ctx.tree.set(clean as NodeData);
+      }),
 
     setComponent: authed
       .input(
@@ -164,7 +190,8 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
         }),
       )
       .mutation(async ({ input, ctx }) => {
-        const result = await executeAction(ctx.tree, input.path, input.type, input.key, input.action, input.data);
+        const userId = ctx.session?.userId ?? null;
+        const result = await executeAction(ctx.tree, input.path, input.type, input.key, input.action, input.data, { userId });
         if (input.watch && ctx.session) {
           const paths = extractPaths(result);
           if (paths.length) watcher.watch(ctx.session.userId, paths);
@@ -345,7 +372,7 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
               emit.error(new OpError('BAD_REQUEST', `No action "${input.action}" for type "${node.$type}"`));
               return;
             }
-            const actx: ActionCtx = { node, comp, tree: ctx.tree, signal: ac.signal, nc: serverNodeHandle(ctx.tree) };
+            const actx: ActionCtx = { node, comp, tree: ctx.tree, signal: ac.signal, nc: serverNodeHandle(ctx.tree), userId: ctx.session?.userId ?? null };
             const result = handler(actx, input.data);
             if (
               result &&
@@ -375,19 +402,34 @@ export function createTreeRouter(baseStore: ReactiveTree, watcher: WatchManager)
         const claims = ctx.session?.claims ?? [];
         const connId = `${userId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 
+        // Resolve claims once per connection (avoid per-event buildClaims)
+        let resolvedClaims: string[] | null = claims.length ? claims : null;
+        const getClaims = async () => {
+          if (!resolvedClaims) resolvedClaims = await buildClaims(baseStore, userId);
+          return resolvedClaims;
+        };
+
         const filteredPush = async (event: NodeEvent) => {
           if (event.type === 'reconnect') { emit.next(event); return; }
 
           // ACL check: verify user can still read this path
-          const perm = await resolvePermission(baseStore, event.path, userId, claims.length ? claims : await buildClaims(baseStore, userId));
+          const userClaims = await getClaims();
+          const perm = await resolvePermission(baseStore, event.path, userId, userClaims);
           if (!(perm & R)) return; // silently drop — user lost read access
 
-          // Strip forbidden components from set events
           if (event.type === 'set' && event.node) {
+            // Strip forbidden components from full node
             const fullNode = { $path: event.path, ...event.node } as NodeData;
-            const stripped = stripComponents(fullNode, userId, claims.length ? claims : await buildClaims(baseStore, userId));
+            const stripped = stripComponents(fullNode, userId, userClaims);
             const { $path, ...body } = stripped;
             emit.next({ ...event, node: body });
+          } else if (event.type === 'patch' && event.patches.length > 0) {
+            // Filter patch ops targeting restricted components
+            const node = await baseStore.get(event.path);
+            if (!node) { emit.next(event); return; }
+            const filtered = filterPatches(event.patches, node, userId, userClaims);
+            if (filtered.length === 0) return; // all ops were restricted — skip entirely
+            emit.next(filtered.length === event.patches.length ? event : { ...event, patches: filtered });
           } else {
             emit.next(event);
           }

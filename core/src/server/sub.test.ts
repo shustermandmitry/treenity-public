@@ -2,7 +2,7 @@ import { createNode } from '#core';
 import { createMemoryTree } from '#tree';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { type NodeEvent, withSubscriptions } from './sub';
+import { attachPatches, type NodeEvent, withSubscriptions } from './sub';
 
 describe('Subscriptions', () => {
   it('emits on set (children)', async () => {
@@ -51,5 +51,77 @@ describe('Subscriptions', () => {
     unsub();
     await tree.set(createNode('/bot/y', 'page'));
     assert.equal(events.length, 1);
+  });
+
+  it('attachPatches provides trusted patches that are broadcast', async () => {
+    const tree = withSubscriptions(createMemoryTree());
+    const events: NodeEvent[] = [];
+    await tree.set({ ...createNode('/x', 'test'), foo: 'old' });
+    tree.subscribe('/x', (e) => events.push(e));
+
+    // Simulate action: node with Symbol-attached patches (server-internal path)
+    const node = { ...createNode('/x', 'test'), foo: 'bar' };
+    attachPatches(node, [{ op: 'replace', path: ['foo'], value: 'bar' }] as any);
+    await tree.set(node);
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, 'patch');
+    // Patches came from Symbol side channel (Immer format converted to RFC 6902)
+    assert.ok('patches' in events[0] && events[0].patches.length === 1);
+    if (events[0].type === 'patch') {
+      assert.equal(events[0].patches[0].path, '/foo');
+    }
+  });
+
+  it('node without patches gets computed diff (client path)', async () => {
+    const tree = withSubscriptions(createMemoryTree());
+    const events: NodeEvent[] = [];
+    await tree.set({ ...createNode('/x', 'test'), foo: 'old' });
+    tree.subscribe('/x', (e) => events.push(e));
+
+    // Client set: no patches → sub.ts computes diff via fast-json-patch
+    await tree.set({ ...createNode('/x', 'test'), foo: 'new' });
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, 'patch');
+    if (events[0].type === 'patch') {
+      const fooOp = events[0].patches.find(p => p.path === '/foo');
+      assert.ok(fooOp);
+      assert.equal((fooOp as any).value, 'new');
+    }
+  });
+
+  it('string $patches are stripped and ignored — injection blocked', async () => {
+    const tree = withSubscriptions(createMemoryTree());
+    const events: NodeEvent[] = [];
+    await tree.set({ ...createNode('/x', 'test'), amount: 100 });
+    tree.subscribe('/x', (e) => events.push(e));
+
+    // Simulate client injection: string $patches with fake values
+    const node: any = { ...createNode('/x', 'test'), amount: 200 };
+    node.$patches = [{ op: 'replace', path: ['amount'], value: 0 }];
+    await tree.set(node);
+
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, 'patch');
+    if (events[0].type === 'patch') {
+      const amountOp = events[0].patches.find(p => p.path === '/amount');
+      assert.ok(amountOp);
+      // Computed diff shows the REAL value (200), not the injected fake (0)
+      assert.equal((amountOp as any).value, 200);
+    }
+  });
+
+  it('string $patches are not persisted to storage', async () => {
+    const mem = createMemoryTree();
+    const tree = withSubscriptions(mem);
+
+    const node: any = { ...createNode('/x', 'test'), foo: 'bar' };
+    node.$patches = [{ op: 'replace', path: ['foo'], value: 'FAKE' }];
+    await tree.set(node);
+
+    const stored = await mem.get('/x');
+    assert.ok(stored);
+    assert.equal('$patches' in stored, false, '$patches should not be stored');
   });
 });

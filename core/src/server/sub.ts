@@ -12,6 +12,14 @@ import { type Patch } from 'immer';
 
 const { compare } = fjp;
 
+/** Symbol key for trusted Immer patches — only accessible from server code, never from client JSON */
+const PATCHES = Symbol('patches');
+
+/** Attach Immer patches to a node for efficient CDC broadcasting. Server-internal only. */
+export function attachPatches(node: NodeData, patches: Patch[]) {
+  (node as any)[PATCHES] = patches;
+}
+
 // Immer Patch {path: ['a','b']} → RFC 6902 Operation {path: '/a/b'}
 function immerToRfc(patches: Patch[]): Operation[] {
   return patches.map(p => ({ ...p, path: '/' + p.path.join('/') }) as Operation);
@@ -109,8 +117,9 @@ export function withSubscriptions(
     getChildren: tree.getChildren.bind(tree),
 
     async set(node) {
-      const patches = node['$patches'] as Patch[] | undefined;
-      if (patches) {
+      const patches = (node as any)[PATCHES] as Patch[] | undefined;
+      // Defense in depth: strip string $patches if injected (should never reach here after tRPC strip)
+      if ('$patches' in node) {
         node = { ...node };
         delete node['$patches'];
       }
