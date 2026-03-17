@@ -103,6 +103,41 @@ describe('withCache — writes populate', () => {
   });
 });
 
+describe('withCache — patch via set', () => {
+  it('patch warms cache — next get returns patched data without underlying call', async () => {
+    let gets = 0;
+    const mem = createMemoryTree();
+    await mem.set(makeNode('/a', { count: 5 }));
+
+    const spied: typeof mem = {
+      ...mem,
+      async get(path, ctx) { gets++; return mem.get(path, ctx); },
+      async getChildren(p, o, c) { return mem.getChildren(p, o, c); },
+      async set(n, c) { return mem.set(n, c); },
+      async remove(p, c) { return mem.remove(p, c); },
+    };
+
+    const cached = withCache(spied);
+    await cached.patch('/a', [['r', 'count', 10]]);
+    gets = 0; // reset after patch
+
+    const node = await cached.get('/a'); // should hit cache
+    assert.equal(gets, 0, 'no underlying get after patch');
+    assert.equal((node as any).count, 10);
+  });
+
+  it('patch goes through set — $rev is bumped', async () => {
+    const mem = createMemoryTree();
+    await mem.set(makeNode('/a', { v: 1 }));
+    const cached = withCache(mem);
+
+    await cached.patch('/a', [['r', 'v', 2]]);
+    const node = await cached.get('/a');
+    assert.equal(node?.$rev, 2, 'patch via set should bump $rev');
+    assert.equal((node as any).v, 2);
+  });
+});
+
 describe('withCache — inflight dedup', () => {
   it('concurrent gets produce single underlying call', async () => {
     let calls = 0;

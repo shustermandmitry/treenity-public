@@ -6,12 +6,13 @@
 import type { NodeData } from '#core';
 import { type Tree, treeEnsure, treeNavigate, type TreeNode } from './index';
 import { createInflight } from './inflight';
+import { patchViaSet } from './patch';
 
 export function withCache(tree: Tree): Tree {
   const root: TreeNode<NodeData> = { children: new Map() };
   const dedup = createInflight<NodeData | undefined>();
 
-  return {
+  const wrapper: Tree = {
     async get(path, ctx) {
       const cached = treeNavigate(root, path);
       if (cached?.data !== undefined) return cached.data;
@@ -43,9 +44,8 @@ export function withCache(tree: Tree): Tree {
     },
 
     async patch(path, ops, ctx) {
-      await tree.patch(path, ops, ctx);
-      const fresh = await tree.get(path, ctx);
-      treeEnsure(root, path).data = fresh;
+      return patchViaSet(wrapper, path, ops, ctx);
     },
   };
+  return wrapper;
 }

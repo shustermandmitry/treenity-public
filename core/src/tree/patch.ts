@@ -131,3 +131,18 @@ export async function defaultPatch(
   applyOps(copy, ops);
   await set(copy, ctx);
 }
+
+/** Patch via get→apply→set on the combinator itself.
+ *  Ensures patch goes through the same set() pipeline (validation, refs, cache, etc.) */
+export async function patchViaSet(
+  self: { get(path: string, ctx?: unknown): Promise<NodeData | undefined>; set(node: NodeData, ctx?: unknown): Promise<void> },
+  path: string,
+  ops: readonly PatchOp[],
+  ctx?: unknown,
+): Promise<void> {
+  const node = await self.get(path, ctx);
+  if (!node) throw new Error(`Node not found: ${path}`);
+  const copy = structuredClone(node);
+  applyOps(copy, ops);
+  await self.set(copy, ctx);
+}

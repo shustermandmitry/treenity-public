@@ -9,7 +9,7 @@ import { applyOps, defaultPatch, type PatchOp } from './patch';
 // ── Pagination ──
 
 export type PageOpts = { limit?: number; offset?: number };
-export type Page<T> = { items: T[]; total: number; queryMount?: { source: string, match: Record<string, unknown> } };
+export type Page<T> = { items: T[]; total: number; truncated?: boolean; queryMount?: { source: string, match: Record<string, unknown> } };
 
 export function paginate<T>(items: T[], opts?: PageOpts): Page<T> {
   const total = items.length;
@@ -214,4 +214,4 @@ export function createMemoryTree(): Tree {
   };
 }
 
-export { type PatchOp, type Rfc6902Op, PatchTestError, applyOps, toRfc6902, fromRfc6902, defaultPatch } from './patch';
+export { type PatchOp, type Rfc6902Op, PatchTestError, applyOps, toRfc6902, fromRfc6902, defaultPatch, patchViaSet } from './patch';
