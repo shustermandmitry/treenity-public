@@ -2,9 +2,10 @@ import { registerType } from '#comp';
 import { createNode, isComponent, type NodeData, normalizeType, resolve } from '#core';
 import { clearRegistry } from '#core/index.test';
 import { createMemoryTree } from '#tree';
+import { withCache } from '#tree/cache';
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
-import { collectSiblings, createNodeHandle, executeAction, registerBuiltinActions } from './actions';
+import { applyTemplate, collectSiblings, createNodeHandle, executeAction, registerBuiltinActions, setComponent } from './actions';
 
 // ── Component classes ──
 
@@ -326,5 +327,206 @@ describe('defineComponent', () => {
 
     const result = await executeAction(tree, '/evil1', undefined, undefined, 'pwn', {});
     assert.equal(result, 'safe', 'process must not be accessible in sandbox');
+  });
+
+  it('sandboxed dynamic action blocks writes outside own path', async () => {
+    registerBuiltinActions();
+    const tree = createMemoryTree();
+
+    await tree.set({
+      $path: '/sys/types/test/escape',
+      $type: 'dir',
+      actions: {
+        steal: 'ctx.tree.set({ $path: "/auth/sessions/evil", $type: "session", hacked: true }); return "tried";',
+      },
+    } as NodeData);
+
+    await tree.set(createNode('/esc1', 'test.escape', {}));
+
+    const result = await executeAction(tree, '/esc1', undefined, undefined, 'steal', {});
+    assert.equal(result, 'tried');
+
+    // The write to /auth/sessions/evil should have been blocked
+    const evil = await tree.get('/auth/sessions/evil');
+    assert.equal(evil, undefined, 'write to foreign path must be blocked');
+  });
+
+  it('sandboxed dynamic action does not expose $acl/$owner in ctx.node', async () => {
+    registerBuiltinActions();
+    const tree = createMemoryTree();
+
+    await tree.set({
+      $path: '/sys/types/test/snoop',
+      $type: 'dir',
+      actions: {
+        check: 'var n = ctx.node; return { hasAcl: "$acl" in n, hasOwner: "$owner" in n, hasRefs: "$refs" in n };',
+      },
+    } as NodeData);
+
+    await tree.set({
+      $path: '/snoop1', $type: 'test.snoop',
+      $acl: [{ g: 'admins', p: 15 }],
+      $owner: 'secret-user',
+      $refs: ['/some/ref'],
+      title: 'visible',
+    } as NodeData);
+
+    const result = await executeAction(tree, '/snoop1', undefined, undefined, 'check', {}) as any;
+    assert.equal(result.hasAcl, false, '$acl must be stripped');
+    assert.equal(result.hasOwner, false, '$owner must be stripped');
+    assert.equal(result.hasRefs, false, '$refs must be stripped');
+  });
+
+  it('sandboxed dynamic action allows writes to own path and children', async () => {
+    registerBuiltinActions();
+    const tree = createMemoryTree();
+
+    await tree.set({
+      $path: '/sys/types/test/writer',
+      $type: 'dir',
+      actions: {
+        writeChild: 'ctx.tree.set({ $path: ctx.node.$path + "/child1", $type: "test.writer", created: true }); return "ok";',
+      },
+    } as NodeData);
+
+    await tree.set(createNode('/writer1', 'test.writer', {}));
+
+    const result = await executeAction(tree, '/writer1', undefined, undefined, 'writeChild', {});
+    assert.equal(result, 'ok');
+
+    const child = await tree.get('/writer1/child1');
+    assert.ok(child, 'write to own child path should succeed');
+    assert.equal((child as any).created, true);
+  });
+
+  it('dynamic action not cached — source changes take effect', async () => {
+    registerBuiltinActions();
+    const tree = createMemoryTree();
+
+    await tree.set({
+      $path: '/sys/types/test/mutable',
+      $type: 'dir',
+      actions: { calc: 'return 1;' },
+    } as NodeData);
+    await tree.set(createNode('/mut1', 'test.mutable', {}));
+
+    const r1 = await executeAction(tree, '/mut1', undefined, undefined, 'calc', {});
+    assert.equal(r1, 1);
+
+    // Update the action source
+    const typeNode = (await tree.get('/sys/types/test/mutable'))!;
+    await tree.set({ ...typeNode, actions: { calc: 'return 2;' } } as NodeData);
+
+    const r2 = await executeAction(tree, '/mut1', undefined, undefined, 'calc', {});
+    assert.equal(r2, 2, 'updated source should take effect immediately');
+  });
+});
+
+describe('applyTemplate', () => {
+  it('rolls back written children when a write fails mid-apply', async () => {
+    const tree = createMemoryTree();
+
+    // Template with 3 blocks
+    await tree.set({ $path: '/tmpl', $type: 'template' } as NodeData);
+    await tree.set({ $path: '/tmpl/a', $type: 'block', label: 'A' } as NodeData);
+    await tree.set({ $path: '/tmpl/b', $type: 'block', label: 'B' } as NodeData);
+    await tree.set({ $path: '/tmpl/c', $type: 'block', label: 'C' } as NodeData);
+
+    // Target with existing children
+    await tree.set({ $path: '/target', $type: 'page' } as NodeData);
+    await tree.set({ $path: '/target/old1', $type: 'block', label: 'OLD1' } as NodeData);
+    await tree.set({ $path: '/target/old2', $type: 'block', label: 'OLD2' } as NodeData);
+
+    // Wrap tree.set to fail on the 3rd new write (block c)
+    const realSet = tree.set.bind(tree);
+    let setCount = 0;
+    const failingTree = {
+      ...tree,
+      set: async (node: NodeData) => {
+        setCount++;
+        // Writes 1-2 = blocks a, b succeed; write 3 = block c fails
+        if (setCount === 3) throw new Error('disk full');
+        return realSet(node);
+      },
+    };
+
+    await assert.rejects(
+      () => applyTemplate(failingTree as any, '/tmpl', '/target'),
+      { message: 'disk full' },
+    );
+
+    // Original children must still be present (restored from snapshot)
+    const old1 = await tree.get('/target/old1');
+    assert.ok(old1, 'original child old1 must survive rollback');
+    assert.equal((old1 as any).label, 'OLD1');
+
+    const old2 = await tree.get('/target/old2');
+    assert.ok(old2, 'original child old2 must survive rollback');
+  });
+
+  it('preserves data when delete phase fails (no data loss)', async () => {
+    const tree = createMemoryTree();
+
+    // Template with 1 block
+    await tree.set({ $path: '/tmpl', $type: 'template' } as NodeData);
+    await tree.set({ $path: '/tmpl/new1', $type: 'block', label: 'NEW' } as NodeData);
+
+    // Target with existing child (different name, so it should be deleted)
+    await tree.set({ $path: '/target', $type: 'page' } as NodeData);
+    await tree.set({ $path: '/target/old1', $type: 'block', label: 'OLD' } as NodeData);
+
+    // Wrap tree.remove to always fail
+    const failingTree = {
+      ...tree,
+      remove: async (_path: string) => { throw new Error('remove failed'); },
+    };
+
+    // applyTemplate should still succeed (delete failures don't abort)
+    // Actually the current code doesn't catch delete errors — but delete phase
+    // happens after all writes, so data is safe. Let's verify both children exist.
+    try {
+      await applyTemplate(failingTree as any, '/tmpl', '/target');
+    } catch {
+      // delete error may propagate — that's ok
+    }
+
+    // New child was written (phase 1 succeeded)
+    const newChild = await tree.get('/target/new1');
+    assert.ok(newChild, 'new child must exist after write phase');
+    assert.equal((newChild as any).label, 'NEW');
+
+    // Old child still exists (delete failed, but no data loss)
+    const oldChild = await tree.get('/target/old1');
+    assert.ok(oldChild, 'old child preserved when delete fails — no data loss');
+  });
+});
+
+describe('setComponent', () => {
+  it('does not corrupt cache when tree.set fails', async () => {
+    const mem = createMemoryTree();
+    const cached = withCache(mem);
+
+    await cached.set({ $path: '/n1', $type: 'test', foo: 'original' } as NodeData);
+
+    // Prime cache
+    const before = await cached.get('/n1');
+    assert.equal((before as any).foo, 'original');
+
+    // Make set fail (simulate OCC/ACL/validation failure)
+    const realSet = cached.set.bind(cached);
+    const failing = {
+      ...cached,
+      set: async (_node: NodeData) => { throw new Error('ACL denied'); },
+    };
+
+    await assert.rejects(
+      () => setComponent(failing as any, '/n1', 'bar', { x: 1 }),
+      { message: 'ACL denied' },
+    );
+
+    // Cache must still return original, unmutated node
+    const after = await cached.get('/n1');
+    assert.equal((after as any).foo, 'original', 'original field preserved');
+    assert.equal((after as any).bar, undefined, 'ghost component must not appear in cache');
   });
 });

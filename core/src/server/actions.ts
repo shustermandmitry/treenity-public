@@ -10,6 +10,7 @@ import { type ComponentData, getComponentField, isComponent, type NodeData, regi
 import { type Tree } from '#tree';
 import { createDraft, enablePatches, finishDraft, type Patch } from 'immer';
 import { OpError } from './errors';
+import { attachPatches } from './sub';
 
 export type NodeHandle = ReturnType<typeof serverNodeHandle>;
 
@@ -22,6 +23,8 @@ export type ActionCtx = {
   nc: NodeHandle;
   comp?: ComponentData;
   deps?: ResolvedDeps;
+  /** User who triggered this action (null for system/anonymous) */
+  userId?: string | null;
 };
 
 // ── Client proxy ──
@@ -160,9 +163,16 @@ async function loadDynamicAction(
 
       // Wrapper: provides ctx.node, ctx.store (legacy alias), ctx.tree as sync bridge
       // Dynamic action code uses `await ctx.store.get(path)` — in sandbox we strip await (sync)
+      // Sanitize: strip security-sensitive fields from snapshot
+      const sanitized = { ...nodeSnapshot };
+      delete (sanitized as any).$acl;
+      delete (sanitized as any).$owner;
+      delete (sanitized as any).$refs;
+      const sanitizedJson = JSON.stringify(sanitized);
+
       const wrapperCode = `
         var ctx = {
-          node: ${nodeJson},
+          node: ${sanitizedJson},
           tree: {
             get: function(p) { var r = ctx_tree_get(p); return r === 'null' ? null : JSON.parse(r); },
             set: function(n) { ctx_tree_set(JSON.stringify(n)); },
@@ -182,10 +192,19 @@ async function loadDynamicAction(
       treeOpsResult = vm.dump(result.value);
       result.value.dispose();
 
-      // Apply tree writes to real tree
+      // Apply tree writes to real tree — scoped to own path or children only
+      const nodePath = ctx.node.$path;
       for (const w of treeWrites) {
         const n = w.node;
         if (n && typeof n === 'object' && typeof n.$path === 'string' && typeof n.$type === 'string') {
+          if (n.$path !== nodePath && !n.$path.startsWith(nodePath + '/')) {
+            console.warn(`[sandbox:${type}.${action}] blocked write to ${n.$path} (outside ${nodePath})`);
+            continue;
+          }
+          // Strip security-sensitive fields from sandbox writes
+          delete (n as any).$acl;
+          delete (n as any).$owner;
+          delete (n as any).$refs;
           await tree.set(n as NodeData);
         }
       }
@@ -197,8 +216,9 @@ async function loadDynamicAction(
     }
   };
 
-  register(type, `action:${action}`, fn);
-  console.log(`[uix] loaded sandboxed dynamic action "${action}" for "${type}"`);
+  // No register() — don't cache permanently. Re-evaluate from tree each time.
+  // This ensures source changes take effect without server restart.
+  console.warn(`[actions] loading dynamic action "${action}" for "${type}" from ${typePath}`);
   return fn;
 }
 
@@ -239,6 +259,7 @@ export async function executeAction(
   componentKey: string | undefined,
   action: string,
   data?: unknown,
+  opts?: { userId?: string | null },
 ): Promise<unknown> {
   const { node, handler, type, deps, fieldKey } = await resolveActionHandler(
     tree, path, componentType, componentKey, action,
@@ -265,7 +286,7 @@ export async function executeAction(
   const dc = fieldKey ? draft[fieldKey] : undefined;
   const draftComp = isComponent(dc) ? dc as ComponentData : undefined;
   const nc = serverNodeHandle(tree);
-  const actx: ActionCtx = { node: draft, comp: draftComp, deps, tree, signal: AbortSignal.timeout(ACTION_TIMEOUT), nc };
+  const actx: ActionCtx = { node: draft, comp: draftComp, deps, tree, signal: AbortSignal.timeout(ACTION_TIMEOUT), nc, userId: opts?.userId };
   const result = await handler(actx, data ?? {});
 
   let patches: Patch[] = [];
@@ -278,7 +299,11 @@ export async function executeAction(
     }
   }
 
-  if (patches.length > 0) await tree.set({ ...nextNode, $rev: node.$rev, $patches: patches } as NodeData);
+  if (patches.length > 0) {
+    const toSave = { ...nextNode, $rev: node.$rev };
+    attachPatches(toSave, patches);
+    await tree.set(toSave as NodeData);
+  }
   return result;
 }
 
@@ -293,13 +318,14 @@ export async function* executeStream(
   action: string,
   data?: unknown,
   signal?: AbortSignal,
+  opts?: { userId?: string | null },
 ): AsyncGenerator<unknown> {
   const { node, handler, comp, deps } = await resolveActionHandler(
     tree, path, componentType, componentKey, action,
   );
   // comp is already node[fieldKey] from resolution — no Immer draft needed for generators
   const nc = serverNodeHandle(tree);
-  const actx: ActionCtx = { node, comp, deps, tree, signal: signal ?? AbortSignal.timeout(STREAM_TIMEOUT), nc };
+  const actx: ActionCtx = { node, comp, deps, tree, signal: signal ?? AbortSignal.timeout(STREAM_TIMEOUT), nc, userId: opts?.userId };
   const result = handler(actx, data ?? {});
   if (!result || typeof (result as any)[Symbol.asyncIterator] !== 'function')
     throw new OpError('BAD_REQUEST', `Action "${action}" is not a generator`);
@@ -321,8 +347,7 @@ export async function setComponent(
   if (rev != null && node.$rev != null && rev !== node.$rev)
     throw new OpError('CONFLICT', `Stale revision: expected ${rev}, got ${node.$rev}`);
 
-  node[name] = data;
-  await tree.set(node);
+  await tree.set({ ...node, [name]: data });
 }
 
 // ── applyTemplate: copy template children to target path ──
@@ -338,13 +363,32 @@ export async function applyTemplate(
   const { items: blocks } = await tree.getChildren(templatePath);
   const { items: existing } = await tree.getChildren(targetPath);
 
-  for (const child of existing) await tree.remove(child.$path);
+  // Snapshot existing children for rollback
+  const snapshot = existing.map(c => structuredClone(c));
 
-  for (const block of blocks) {
-    const bname = block.$path.slice(block.$path.lastIndexOf('/') + 1);
-    const bpath = targetPath === '/' ? `/${bname}` : `${targetPath}/${bname}`;
-    const { $rev, ...rest } = block;
-    await tree.set({ ...rest, $path: bpath });
+  // Phase 1: Write new children first (crash here → old + partial new, no data loss)
+  const written: string[] = [];
+  try {
+    for (const block of blocks) {
+      const bname = block.$path.slice(block.$path.lastIndexOf('/') + 1);
+      const bpath = targetPath === '/' ? `/${bname}` : `${targetPath}/${bname}`;
+      const { $rev, ...rest } = block;
+      await tree.set({ ...rest, $path: bpath });
+      written.push(bpath);
+    }
+  } catch (err) {
+    // Rollback: remove partially written new children, restore originals
+    for (const wp of written) await tree.remove(wp).catch(() => {});
+    for (const orig of snapshot) await tree.set(orig).catch(() => {});
+    throw err;
+  }
+
+  // Phase 2: Delete old children not in new set (crash here → duplicates, no loss)
+  const newPaths = new Set(written);
+  for (const child of existing) {
+    if (!newPaths.has(child.$path)) {
+      await tree.remove(child.$path);
+    }
   }
 
   return { applied: tmpl.$path, blocks: blocks.length };
