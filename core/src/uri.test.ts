@@ -34,11 +34,11 @@ describe('parseURI', () => {
 
   it('nested dot-notation params', () => {
     const r = parseURI('/col?age.$gt=10&age.$lt=50#find()')
-    assert.deepEqual(r, {
-      path: '/col',
-      action: 'find',
-      data: { age: { $gt: 10, $lt: 50 } },
-    })
+    assert.equal(r.path, '/col')
+    assert.equal(r.action, 'find')
+    const age = r.data!.age as Record<string, unknown>
+    assert.equal(age.$gt, 10)
+    assert.equal(age.$lt, 50)
   })
 
   it('boolean and null coercion in params', () => {
@@ -109,5 +109,44 @@ describe('parseURI', () => {
     assert.equal(r.key, 'comp')
     assert.equal(r.action, 'run')
     assert.equal(r.field, undefined)
+  })
+})
+
+describe('prototype pollution prevention', () => {
+  it('__proto__ key is silently ignored', () => {
+    const r = parseURI('/x?__proto__.isAdmin=true#find()')
+    assert.equal(r.data?.isAdmin, undefined)
+    assert.equal(({} as any).isAdmin, undefined, 'Object.prototype must not be polluted')
+  })
+
+  it('constructor key is silently ignored', () => {
+    const r = parseURI('/x?constructor.polluted=true#find()')
+    assert.equal(r.data!.hasOwnProperty('constructor'), false, 'constructor not set as own property')
+    assert.equal(({} as any).polluted, undefined, 'Object constructor not polluted')
+  })
+
+  it('prototype key is silently ignored', () => {
+    const r = parseURI('/x?prototype.polluted=true#find()')
+    assert.equal(r.data?.prototype, undefined)
+  })
+
+  it('nested __proto__ in middle of path is ignored', () => {
+    const r = parseURI('/x?a.__proto__.b=1#find()')
+    // `a` intermediate is created, but __proto__ traversal is blocked — `b` never set
+    assert.ok(r.data?.a !== undefined, 'intermediate `a` is created')
+    assert.equal(({} as any).b, undefined, 'Object.prototype must not be polluted')
+  })
+
+  it('forbidden key as final segment is ignored', () => {
+    const r = parseURI('/x?a.__proto__=1#find()')
+    // `a` intermediate is created, but __proto__ assignment is blocked
+    assert.ok(r.data?.a !== undefined, 'intermediate `a` is created')
+    assert.equal((r.data!.a as any).__proto__, undefined, '__proto__ not assigned')
+  })
+
+  it('normal dot-notation still works after hardening', () => {
+    const r = parseURI('/x?age.$gt=10&name=test#find()')
+    assert.equal(r.data!.name, 'test')
+    assert.equal((r.data!.age as any).$gt, 10)
   })
 })

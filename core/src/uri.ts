@@ -68,17 +68,21 @@ function coerce(v: string): unknown {
   return v
 }
 
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 function setNested(obj: Record<string, unknown>, path: string, val: unknown) {
   const parts = path.split('.')
   let cur = obj
 
   for (let i = 0; i < parts.length - 1; i++) {
     const p = parts[i]
+    if (FORBIDDEN_KEYS.has(p)) return
     if (!(p in cur) || typeof cur[p] !== 'object' || cur[p] === null) {
-      cur[p] = {}
+      cur[p] = Object.create(null)
     }
     cur = cur[p] as Record<string, unknown>
   }
 
-  cur[parts[parts.length - 1]] = val
+  const last = parts[parts.length - 1]
+  if (!FORBIDDEN_KEYS.has(last)) cur[last] = val
 }
